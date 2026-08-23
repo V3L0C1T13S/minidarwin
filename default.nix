@@ -237,6 +237,20 @@ lib.makeScope pkgs.newScope (self: with self; {
     toolchain = toolchainStage3;
   };
 
+  # First sysroot that links C++: -lc++ resolves libc++.dylib, whose reexport of
+  # libc++abi.dylib supplies ___dynamic_cast and the __cxxabiv1 vtables.
+  sdkStage4 = callPackage ./pkgs/sdk-stage4.nix { };
+
+  toolchainStage4 = mkToolchain {
+    name = "minidarwin-toolchain-stage4";
+    sysroot = sdkStage4;
+    resourceDir = clangResourceDir;
+  };
+
+  cxxLinkTest = callPackage ./pkgs/llvm-runtimes/cxx-link-test.nix {
+    toolchain = toolchainStage4;
+  };
+
   #### stage 7: the rootfs ####################################################
 
   # Assembled rootfs (early - later stages add inputs here).

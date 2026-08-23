@@ -44,6 +44,8 @@
             libmachO
             libcxxabiDylib
             libcxxDylib
+            sdkStage4
+            toolchainStage4
             rootfs;
 
           # Stage 4 pass-2 members (pass-1 at legacyPackages.<system>.libsystemPass1).
@@ -66,7 +68,7 @@
       checks = forAllSystems (system: pkgs:
         let scope = nativeScope pkgs;
         in {
-          inherit (scope) sdkTest runtimesTest libsystemTest;
+          inherit (scope) sdkTest runtimesTest libsystemTest cxxLinkTest;
         });
 
       # Full set for nix eval; cross.<arch> retargets it.
@@ -79,7 +81,7 @@
         let
           scope = nativeScope pkgs;
           shellFor = s: pkgs.mkShellNoCC {
-            packages = [ s.toolchainStage3 s.mig pkgs.python3 pkgs.perl pkgs.unifdef ];
+            packages = [ s.toolchainStage4 s.mig pkgs.python3 pkgs.perl pkgs.unifdef ];
             shellHook = ''
               echo "minidarwin: CC=$CC"
               echo "            sysroot=$MINIDARWIN_SYSROOT"

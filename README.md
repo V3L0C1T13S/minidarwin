@@ -13,7 +13,7 @@ Pure, reproducible Nix bootstrap of a minimal Darwin userland from Apple's relea
 ```bash
 # XNU/Darwin specific headers
 nix build .#sdk
-nix flake check                    # sdkTest + runtimesTest + libsystemTest
+nix flake check                    # sdkTest + runtimesTest + libsystemTest + cxxLinkTest
 
 # Libraries
 nix build .#libsyscall             # libsystem_kernel.dylib
@@ -21,6 +21,7 @@ nix build .#libcxx                 # libc++.a (on compiler-rt + libunwind + libc
 nix build .#libSystem              # umbrella libSystem.B.dylib (10 re-exported members)
 nix build .#libmachO               # dyld's Mach-O reader (stage 5)
 nix build .#libcxxDylib .#libcxxabiDylib
+nix build .#sdkStage4              # sysroot where plain `-lc++` links (RTTI included)
 nix build .#rootfs                 # assembled tree at real paths (/usr/lib/system, etc.)
 ```
 
@@ -48,7 +49,8 @@ Nothing target-side is ever executed during a build, so either arch builds from 
 nix build .#rootfs                 # native (host arch)
 nix build .#cross.x86_64.rootfs
 nix build .#cross.aarch64.rootfs
-nix build .#cross.x86_64.sdkTest .#cross.x86_64.runtimesTest .#cross.x86_64.libsystemTest
+nix build .#cross.x86_64.sdkTest .#cross.x86_64.runtimesTest .#cross.x86_64.libsystemTest \
+  .#cross.x86_64.cxxLinkTest
 ```
 
 `packages`/`checks` are the native target. `legacyPackages.<system>.cross.<arch>` is the full retargeted set.
@@ -72,9 +74,10 @@ All files are reproducible, and can be verified 1:1 from the build workflow too.
 | `libcxx` / `libunwind` / `libcxxabi` | LLVM runtimes as static archives (283 builtins objects + 1,677 libc++ headers) |
 | `libSystem` | Umbrella `libSystem.B.dylib` re-exporting 10 members under `/usr/lib/system` |
 | `libcxxDylib` / `libcxxabiDylib` | `/usr/lib/libc++.1.dylib` + `libc++abi.dylib` |
+| `sdkStage4` / `toolchainStage4` | The C++-linkable sysroot: stage 3 plus those two dylibs, so `-lc++` alone resolves `___dynamic_cast` and the `__cxxabiv1` type_info vtables. What `nix develop` gives you. |
 | `rootfs` | 13 dylibs assembled at real paths with whole-tree checks (load commands resolve, no undeclared undefined symbols). Nothing runs yet - no `/usr/lib/dyld`. |
 
-`sdkTest` asserts a 2-entry include path (clang builtins + sysroot). `runtimesTest` links C++ against the archives and checks 151 remaining undefs are all C. `libsystemTest` links a C program against `-lSystem` only.
+`sdkTest` asserts a 2-entry include path (clang builtins + sysroot). `runtimesTest` links C++ against the archives and checks 151 remaining undefs are all C. `libsystemTest` links a C program against `-lSystem` only. `cxxLinkTest` links a C++ program that downcasts, cross-casts through a virtual base, uses `typeid` and throws, against nothing but `-lc++`.
 
 ## Limitations
 
