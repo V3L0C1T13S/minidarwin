@@ -1,0 +1,187 @@
+#!/usr/bin/env python3
+"""Print source files of an Xcode target (paths relative to source root).
+
+Reads .xcodeproj file lists - the authoritative source set - without running
+xcodebuild. Handles both classic (PBXSourcesBuildPhase) and Xcode 16
+synchronized-folder (PBXFileSystemSynchronizedRootGroup) projects.
+
+Usage: pbxproj-sources.py <project.pbxproj> <target> [--srcroot DIR] [--platform NAME] [--nix] [--flags]
+"""
+import json
+import os
+import plistlib
+import subprocess
+import sys
+
+# Only these extensions are compiled from synchronized folders.
+SOURCE_EXTENSIONS = {
+    ".c", ".cc", ".cpp", ".cxx", ".m", ".mm", ".s", ".S", ".swift",
+}
+
+
+def load(path):
+    with open(path, "rb") as f:
+        head = f.read(8)
+    if head.startswith(b"bplist"):
+        with open(path, "rb") as f:
+            return plistlib.load(f)
+    # Old-style ASCII plist: plutil is the only reliable parser.
+    out = subprocess.run(
+        ["plutil", "-convert", "json", "-o", "-", path],
+        check=True, capture_output=True,
+    ).stdout
+    return json.loads(out)
+
+
+def resolve_paths(objects):
+    """Map every object id to its path relative to the project source root."""
+    parent = {}
+    for oid, obj in objects.items():
+        for child in obj.get("children", []):
+            parent[child] = oid
+
+    def path_of(oid):
+        obj = objects[oid]
+        own = obj.get("path")
+        tree = obj.get("sourceTree", "<group>")
+        if tree == "SOURCE_ROOT":
+            return own or ""
+        prefix = ""
+        if oid in parent:
+            prefix = path_of(parent[oid])
+        if not own:
+            return prefix
+        return f"{prefix}/{own}" if prefix else own
+
+    return path_of
+
+
+def folder_sources(root):
+    """Every compilable file under `root`, relative to it, sorted."""
+    out = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames.sort()
+        for f in sorted(filenames):
+            if os.path.splitext(f)[1] in SOURCE_EXTENSIONS:
+                rel = os.path.relpath(os.path.join(dirpath, f), root)
+                out.append(rel)
+    return sorted(out)
+
+
+def resolve_synchronized(objects, target_id, srcroot, platform):
+    """Sources from PBXFileSystemSynchronizedRootGroups.
+
+    If target owns the folder: everything minus membershipExceptions.
+    If not: only membershipExceptions (opt-in). Then filtered by platform.
+    """
+    target = objects[target_id]
+    owned = set(target.get("fileSystemSynchronizedGroups", []))
+    files = []
+
+    for gid, group in objects.items():
+        if group.get("isa") != "PBXFileSystemSynchronizedRootGroup":
+            continue
+        exceptions = [
+            objects[e] for e in group.get("exceptions", [])
+            if objects[e].get("target") == target_id
+        ]
+        listed = {m for e in exceptions for m in e.get("membershipExceptions", [])}
+
+        if gid in owned:
+            members = [
+                f for f in folder_sources(os.path.join(srcroot, group["path"]))
+                if f not in listed
+            ]
+        elif exceptions:
+            members = sorted(m for m in listed
+                             if os.path.splitext(m)[1] in SOURCE_EXTENSIONS)
+        else:
+            continue
+
+        for e in exceptions:
+            filters = e.get("platformFiltersByRelativePath", {})
+            members = [m for m in members
+                       if platform in filters.get(m, [platform])]
+
+        for m in members:
+            path = os.path.join(srcroot, group["path"], m)
+            if not os.path.exists(path):
+                sys.exit(f"{group['path']}/{m}: listed by the project, not on disk")
+            files.append((f"{group['path']}/{m}", ""))
+
+    return files
+
+
+def main():
+    argv = sys.argv[1:]
+    args, opts = [], {}
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a in ("--srcroot", "--platform"):
+            opts[a[2:]] = argv[i + 1]
+            i += 2
+            continue
+        if not a.startswith("--"):
+            args.append(a)
+        i += 1
+    as_nix = "--nix" in argv
+    with_flags = "--flags" in argv
+    proj_path, target_name = args
+    # <srcroot>/<name>.xcodeproj/project.pbxproj
+    srcroot = opts.get("srcroot") or os.path.dirname(os.path.dirname(
+        os.path.abspath(proj_path)))
+    platform = opts.get("platform", "macos")
+
+    proj = load(proj_path)
+    objects = proj["objects"]
+    path_of = resolve_paths(objects)
+
+    root = objects[proj["rootObject"]]
+    target = target_id = None
+    for tid in root["targets"]:
+        if objects[tid].get("name") == target_name:
+            target, target_id = objects[tid], tid
+            break
+    if target is None:
+        names = sorted(objects[t].get("name", "?") for t in root["targets"])
+        sys.exit(f"no target {target_name!r}; have: {names}")
+
+    files = []
+    for phase_id in target["buildPhases"]:
+        phase = objects[phase_id]
+        if phase.get("isa") != "PBXSourcesBuildPhase":
+            continue
+        for bf_id in phase.get("files", []):
+            bf = objects[bf_id]
+            ref = bf.get("fileRef")
+            if ref is None:
+                continue
+            flags = bf.get("settings", {}).get("COMPILER_FLAGS", "")
+            files.append((path_of(ref), " ".join(flags.split())))
+
+    files += resolve_synchronized(objects, target_id, srcroot, platform)
+
+    if not files:
+        sys.exit(f"target {target_name!r} contributes no source files")
+
+    files = sorted(set(files))
+    if not with_flags:
+        files = sorted({p for p, _ in files})
+    if as_nix:
+        print("# Generated by scripts/pbxproj-sources.py -- do not edit.")
+        print(f"# target: {target_name}")
+        print("[")
+        for f in files:
+            print(f'  "{f}"')
+        print("]")
+    elif with_flags:
+        for f, flags in files:
+            print(f"{f}\t{flags}")
+    else:
+        for f in files:
+            print(f)
+
+
+if __name__ == "__main__":
+    main()

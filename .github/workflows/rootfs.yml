@@ -1,0 +1,120 @@
+name: rootfs
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rootfs-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: rootfs (${{ matrix.arch }})
+    runs-on: macos-15
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: aarch64
+            rootfs: .#rootfs
+            checks: .#sdkTest .#runtimesTest .#libsystemTest
+          - arch: x86_64
+            rootfs: .#cross.x86_64.rootfs
+            checks: .#cross.x86_64.sdkTest .#cross.x86_64.runtimesTest .#cross.x86_64.libsystemTest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+            # A result symlink only pins an output's runtime closure, and
+            # the rootfs refers to none of the stages that built it. These two
+            # keep the whole build closure -- SDK, toolchains, every stage --
+            # alive behind that root, which is what makes the trim below safe.
+            keep-outputs = true
+            keep-derivations = true
+
+      # Carry /nix/store between runs. Every stage is a pure function of
+      # flake.lock plus the tree, so an untouched stage is restored instead of
+      # recompiled; a change to one stage only rebuilds it and what is above
+      # it. Pull requests restore main's cache but do not write one, so the
+      # repo's 10 GB of Actions cache is not split across every branch.
+      - uses: nix-community/cache-nix-action@v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('flake.lock', '**/*.nix', 'lib/*.sh', 'scripts/*') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-${{ matrix.arch }}-
+          save: ${{ github.event_name == 'push' }}
+          # A full build is ~4 GB (LLVM's monorepo source is 2 GB of
+          # it). The limit is above that on purpose: it collects what went
+          # stale when a pin moved -- unrooted, so collectable -- without
+          # touching anything the next run can still use.
+          gc-max-store-size-macos: 6G
+          purge: true
+          purge-prefixes: nix-${{ runner.os }}-${{ matrix.arch }}-
+          purge-created: 0
+          purge-primary-key: never
+
+      # -o, not --no-link: the symlinks are the GC roots the trim above reads.
+      - name: Build checks
+        run: nix build --print-build-logs -o result-check ${{ matrix.checks }}
+
+      - name: Build rootfs
+        run: nix build --print-build-logs -o result-rootfs --print-out-paths ${{ matrix.rootfs }}
+
+      # The tree is already reproducible, so the tarball must add nothing of
+      # its own: sorted names, no owner, and the mtimes the derivation already
+      # fixed to SOURCE_DATE_EPOCH. GNU tar, not bsdtar -- the macOS one has
+      # neither --sort nor a stable header format.
+      - name: Pack tarball
+        id: pack
+        run: |
+          set -euo pipefail
+          out=$(readlink -f result-rootfs)
+          # On a tag, the tag names the artifact; otherwise the Libsystem
+          # version the tree was built from.
+          case "$GITHUB_REF" in
+            refs/tags/*) version="${GITHUB_REF#refs/tags/}" ;;
+            *)           version=$(nix eval --raw ${{ matrix.rootfs }}.version) ;;
+          esac
+          name="minidarwin-rootfs-${{ matrix.arch }}-$version"
+          mkdir -p dist
+          nix shell --inputs-from . nixpkgs#gnutar nixpkgs#gzip -c \
+            tar --sort=name --numeric-owner --owner=0 --group=0 \
+                --format=gnu -C "$out" -czf "dist/$name.tar.gz" .
+          (cd dist && shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256")
+          cat "dist/$name.tar.gz.sha256"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: ${{ steps.pack.outputs.name }}
+          path: dist/
+          if-no-files-found: error
+
+  release:
+    name: release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          path: dist
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          fail_on_unmatched_files: true
+          generate_release_notes: true
