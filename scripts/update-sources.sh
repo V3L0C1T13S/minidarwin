@@ -155,7 +155,7 @@ if [ "$changed" = 1 ]; then
   gen_cmds shell_cmds pkgs/shell-cmds/shell-cmds-sources.nix \
     echo false find hostname id pwd realpath sh true uname who yes
   gen_cmds file_cmds pkgs/file-cmds/file-cmds-sources.nix \
-    ls
+    chflags chmod chown cp du ln ls mkdir mv stat truncate xattr
 
   echo
   echo "Now re-run the build. Header layout and unifdef flags change between"

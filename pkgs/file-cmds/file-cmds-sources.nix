@@ -4,10 +4,45 @@
 #
 # One attribute per target. Paths are relative to the file_cmds source root.
 {
+  chflags = [
+    "chflags/chflags.c"
+  ];
+  chmod = [
+    "chmod/chmod.c"
+    "chmod/chmod_acl.c"
+  ];
+  chown = [
+    "chown/chown.c"
+  ];
+  cp = [
+    "cp/cp.c"
+    "cp/utils.c"
+  ];
+  du = [
+    "du/du.c"
+  ];
+  ln = [
+    "ln/ln.c"
+  ];
   ls = [
     "ls/cmp.c"
     "ls/ls.c"
     "ls/print.c"
     "ls/util.c"
+  ];
+  mkdir = [
+    "mkdir/mkdir.c"
+  ];
+  mv = [
+    "mv/mv.c"
+  ];
+  stat = [
+    "stat/stat.c"
+  ];
+  truncate = [
+    "truncate/truncate.c"
+  ];
+  xattr = [
+    "xattr/xattr.c"
   ];
 }
