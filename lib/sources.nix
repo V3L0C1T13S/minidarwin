@@ -73,4 +73,7 @@ in
     "sha256-RQve2GqS9ke9hd8kupRMgoOKalTS229asi5tBGrBmS8=";
   bash = apple "bash" "bash-144"
     "sha256-NbbE30OAlKS25OeB/kO30Y8UbmaLbuckFMsLoMSsYa8=";
+  # Only <histedit.h> so far, for shell_cmds' sh (the library is not built).
+  libedit = apple "libedit" "libedit-65"
+    "sha256-p1YROiK6YPLLe8klHhcikjVeVWuEW9plghsKJHXj+EM=";
 }

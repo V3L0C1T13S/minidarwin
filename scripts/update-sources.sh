@@ -129,7 +129,7 @@ if [ "$changed" = 1 ]; then
     echo "#"
     echo "# One attribute per target. Paths are relative to the shell_cmds source root."
     echo "{"
-    for tool in echo pwd uname who; do
+    for tool in echo false find hostname id pwd realpath sh true uname who yes; do
       echo "  $tool = ["
       python3 scripts/pbxproj-sources.py \
         "$shell_cmds/shell_cmds.xcodeproj/project.pbxproj" "$tool" |

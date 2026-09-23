@@ -253,7 +253,10 @@ lib.makeScope pkgs.newScope (self: with self; {
 
   #### stage 6: userland ######################################################
 
-  # echo, pwd, uname, who -- the first executables, C-only against libSystem.
+  # Host tool output: the sources the `sh` target generates before compiling.
+  shGenerated = callPackage ./pkgs/shell-cmds/sh-generated.nix { };
+
+  # The shell_cmds tools -- the first executables, C-only against libSystem.
   shellCmds = callPackage ./pkgs/shell-cmds/shell-cmds.nix {
     toolchain = toolchainStage3;
   };

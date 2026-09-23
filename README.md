@@ -22,6 +22,7 @@ nix build .#libSystem              # umbrella libSystem.B.dylib (10 re-exported 
 nix build .#libmachO               # dyld's Mach-O reader (stage 5)
 nix build .#libcxxDylib .#libcxxabiDylib
 nix build .#sdkStage4              # sysroot where plain `-lc++` links (RTTI included)
+nix build .#shellCmds             # echo, find, id, ash, ... from shell_cmds (stage 6)
 nix build .#rootfs                 # assembled tree at real paths (/usr/lib/system, etc.)
 nix build .#rootfsRelease          # that tree as a release: tarball, manifest, spec, bundle
 ```
@@ -76,8 +77,8 @@ All files are reproducible, and can be verified 1:1 from the build workflow too.
 | `libSystem` | Umbrella `libSystem.B.dylib` re-exporting 10 members under `/usr/lib/system` |
 | `libcxxDylib` / `libcxxabiDylib` | `/usr/lib/libc++.1.dylib` + `libc++abi.dylib` |
 | `sdkStage4` / `toolchainStage4` | The C++-linkable sysroot: stage 3 plus those two dylibs, so `-lc++` alone resolves `___dynamic_cast` and the `__cxxabiv1` type_info vtables. What `nix develop` gives you. |
-| `shellCmds` | Stage 6: `/bin/echo`, `/bin/pwd`, `/usr/bin/uname`, `/usr/bin/who` from `shell_cmds`, plus their man pages. Linked against `libSystem` only. `who` imports five utmpx functions that `libsystem_c` cannot provide yet (`utmpx-darwin.c` needs ASL) and `getpwuid` (`system_info`), both declared. |
-| `rootfs` | 13 dylibs and 4 executables assembled at real paths with whole-tree checks (load commands resolve, no undeclared undefined symbols). Nothing runs yet - no `/usr/lib/dyld`. |
+| `shellCmds` | Stage 6: twelve `shell_cmds` tools at their real paths, plus the man pages each target installs: `/bin/{echo,hostname,pwd,realpath}`, `/usr/bin/{false,find,id,true,uname,who,yes}`, and the Almquist shell as `/usr/local/bin/ash` (the `sh` target's own name and path; macOS's `/bin/sh` comes from `bash`). Linked against `libSystem` only. `ash` is built `NO_HISTORY` - no line editing, `fc`/`bind` say so - because libedit is not built. Imports the tree cannot satisfy yet are declared: utmpx for `who` (`utmpx-darwin.c` needs ASL), passwd/group lookups (`system_info`), and `environ` for `find -exec` and `ash` (defined by libdyld). |
+| `rootfs` | 13 dylibs and 12 executables assembled at real paths with whole-tree checks (load commands resolve, no undeclared undefined symbols). Nothing runs yet - no `/usr/lib/dyld`. |
 | `rootfsRelease` | `rootfs` packed for distribution: a reproducible `.tar.gz`, a `manifest.yaml` (type, mode and SHA-256 of every path, plus a Merkle tree digest), a `spec.yaml` pinning both, and a `.bundle.zip` of all three. |
 
 `sdkTest` asserts a 2-entry include path (clang builtins + sysroot). `runtimesTest` links C++ against the archives and checks 151 remaining undefs are all C. `libsystemTest` links a C program against `-lSystem` only. `cxxLinkTest` links a C++ program that downcasts, cross-casts through a virtual base, uses `typeid` and throws, against nothing but `-lc++`.
@@ -112,7 +113,7 @@ Not every `Libsystem/requiredlibs` entry is buildable from released source. Seve
 
 Each member's `allowUndefined` lists exactly which symbols it expects from absent libs - no blanket `dynamic_lookup`. `rootfs` checks that every undefined import is declared and every declaration is still needed.
 
-No `/usr/lib/dyld` yet (`libmach_o.a` builds; dyld link not started). Userland is four `shell_cmds` tools (`echo`, `pwd`, `uname`, `who`); no shell, no `bash`. No `launchd` - last open source was 2013 and depends on unreleased `libxpc`.
+No `/usr/lib/dyld` yet (`libmach_o.a` builds; dyld link not started). Userland is twelve `shell_cmds` tools, including `find`, `id` and `ash` (no line editing: libedit is not built); no `bash`, so no `/bin/sh`. No `launchd` - last open source was 2013 and depends on unreleased `libxpc`.
 
 ## Updating sources
 

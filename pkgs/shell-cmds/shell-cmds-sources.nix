@@ -7,13 +7,73 @@
   echo = [
     "echo/echo.c"
   ];
+  false = [
+    "false/false.c"
+  ];
+  find = [
+    "find/find.c"
+    "find/function.c"
+    "find/getdate.y"
+    "find/ls.c"
+    "find/main.c"
+    "find/misc.c"
+    "find/operator.c"
+    "find/option.c"
+  ];
+  hostname = [
+    "hostname/hostname.c"
+  ];
+  id = [
+    "id/id.c"
+  ];
   pwd = [
     "pwd/pwd.c"
+  ];
+  realpath = [
+    "realpath/realpath.c"
+  ];
+  sh = [
+    "$(BUILT_PRODUCTS_DIR)/builtins.c"
+    "$(BUILT_PRODUCTS_DIR)/nodes.c"
+    "$(BUILT_PRODUCTS_DIR)/syntax.c"
+    "kill/kill.c"
+    "printf/printf.c"
+    "sh/alias.c"
+    "sh/arith_yacc.c"
+    "sh/arith_yylex.c"
+    "sh/bltin/echo.c"
+    "sh/cd.c"
+    "sh/error.c"
+    "sh/eval.c"
+    "sh/exec.c"
+    "sh/expand.c"
+    "sh/histedit.c"
+    "sh/input.c"
+    "sh/jobs.c"
+    "sh/mail.c"
+    "sh/main.c"
+    "sh/memalloc.c"
+    "sh/miscbltin.c"
+    "sh/mystring.c"
+    "sh/options.c"
+    "sh/output.c"
+    "sh/parser.c"
+    "sh/redir.c"
+    "sh/show.c"
+    "sh/trap.c"
+    "sh/var.c"
+    "test/test.c"
+  ];
+  true = [
+    "true/true.c"
   ];
   uname = [
     "uname/uname.c"
   ];
   who = [
     "who/who.c"
+  ];
+  yes = [
+    "yes/yes.c"
   ];
 }
