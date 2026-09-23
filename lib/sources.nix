@@ -73,7 +73,9 @@ in
     "sha256-RQve2GqS9ke9hd8kupRMgoOKalTS229asi5tBGrBmS8=";
   bash = apple "bash" "bash-144"
     "sha256-NbbE30OAlKS25OeB/kO30Y8UbmaLbuckFMsLoMSsYa8=";
-  # Only <histedit.h> so far, for shell_cmds' sh (the library is not built).
+  # libedit.3.dylib (sh's line editing) and the libncurses it links.
   libedit = apple "libedit" "libedit-65"
     "sha256-p1YROiK6YPLLe8klHhcikjVeVWuEW9plghsKJHXj+EM=";
+  ncurses = apple "ncurses" "ncurses-79"
+    "sha256-Y46SCkdZsc3r7hX1Qq4y5L51RxHR3IkCoAPP6G2mBJs=";
 }

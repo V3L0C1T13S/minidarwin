@@ -1,0 +1,150 @@
+#!/usr/bin/env python3
+"""Emit a header that gives an SDK consumer the public SDK's view of xnu.
+
+pkgs/sdk-headers.nix unifdefs xnu with -DPRIVATE -UMODULES_SUPPORTED, so the
+flat include tree the libsystem members need keeps xnu's textual includes of
+private headers, e.g. <net/if.h> ending in
+
+    #if defined(PRIVATE) && !defined(MODULES_SUPPORTED)
+    #include <net/if_private.h>
+    #endif
+
+Apple's public SDK (unifdef'd -UPRIVATE) has none of those includes, and
+ordinary software (ncurses, libedit, ...) is written against it. Built strict-POSIX, or for x86_64, the private headers
+break it: <net/if_dl.h> wants u_char, <netinet/in.h>'s ntohl collides with
+<i386/endian.h>'s.
+
+This script finds every header xnu includes only under !MODULES_SUPPORTED,
+reads that header's include guard from the SDK, and prints a header that
+defines those guards. Force-included (-include) before anything else, each
+such #include then expands to nothing -- the public SDK's view. A header that
+uses #pragma once has no guard to define; those are listed in the output and
+still included.
+
+Usage: public-sdk-view.py <xnu source> <sdk usr/include>
+"""
+import os
+import re
+import sys
+
+XNU_HEADER_DIRS = ("bsd", "osfmk", "libkern", "libsa", "iokit", "EXTERNAL_HEADERS")
+
+COND = re.compile(r"^\s*#\s*(if|ifdef|ifndef|elif|else|endif)\b(.*)$")
+INCLUDE = re.compile(r"^\s*#\s*include\s*<([^>]+)>")
+
+
+def modules_gated(directive, rest):
+    """True if this #if/#ifndef's true branch exists only without modules."""
+    rest = rest.split("/*")[0].split("//")[0]
+    if directive == "ifndef":
+        return rest.strip() == "MODULES_SUPPORTED"
+    if directive == "if":
+        return re.search(r"!\s*defined\s*\(?\s*MODULES_SUPPORTED\b", rest) is not None
+    return False
+
+
+def gated_includes(path):
+    """#include <...> lines directly in a !MODULES_SUPPORTED true branch."""
+    out = []
+    # Stack of "is this conditional's current branch modules-gated?"
+    stack = []
+    with open(path, errors="replace") as f:
+        for line in f:
+            m = COND.match(line)
+            if m:
+                d, rest = m.group(1), m.group(2)
+                if d in ("if", "ifdef", "ifndef"):
+                    stack.append(modules_gated(d, rest))
+                elif d in ("elif", "else") and stack:
+                    stack[-1] = False
+                elif d == "endif" and stack:
+                    stack.pop()
+                continue
+            m = INCLUDE.match(line)
+            if m and stack and stack[-1]:
+                out.append(m.group(1))
+    return out
+
+
+GUARD = re.compile(r"^\s*#\s*ifndef\s+(\w+)\s*$")
+DEFINE = re.compile(r"^\s*#\s*define\s+(\w+)\b")
+
+
+def include_guard(path):
+    """The first #ifndef X immediately followed by #define X; "#pragma once"
+    if the header uses that instead; None if neither."""
+    pending = None
+    in_comment = False
+    with open(path, errors="replace") as f:
+        for line in f:
+            s = line.strip()
+            if in_comment:
+                if "*/" in s:
+                    in_comment = False
+                continue
+            if s.startswith("/*"):
+                in_comment = "*/" not in s
+                continue
+            if not s or s.startswith("//"):
+                continue
+            if pending:
+                m = DEFINE.match(s)
+                return pending if m and m.group(1) == pending else None
+            if re.match(r"#\s*pragma\s+once\b", s):
+                return "#pragma once"
+            m = GUARD.match(s)
+            if not m:
+                return None
+            pending = m.group(1)
+    return None
+
+
+def main():
+    xnu, sdk = sys.argv[1:3]
+    targets = {}
+    for top in XNU_HEADER_DIRS:
+        for root, dirs, files in os.walk(os.path.join(xnu, top)):
+            dirs.sort()
+            for name in sorted(files):
+                if not name.endswith(".h"):
+                    continue
+                src = os.path.join(root, name)
+                for inc in gated_includes(src):
+                    targets.setdefault(inc, os.path.relpath(src, xnu))
+
+    if not targets:
+        sys.exit("public-sdk-view: no !MODULES_SUPPORTED includes found in xnu")
+
+    lines, unguardable = [], []
+    for inc in sorted(targets):
+        installed = os.path.join(sdk, inc)
+        if not os.path.exists(installed):
+            continue  # not in this SDK (kernel-only, other platform)
+        guard = include_guard(installed)
+        if guard is None:
+            sys.exit(f"public-sdk-view: {inc} (included by {targets[inc]}) "
+                     "has no #ifndef/#define include guard to pre-define")
+        if guard == "#pragma once":
+            unguardable.append(f"/*   <{inc}>, from {targets[inc]} */")
+            continue
+        lines.append(f"#define {guard} 1 /* <{inc}>, from {targets[inc]} */")
+
+    if not lines:
+        sys.exit("public-sdk-view: none of the gated headers is in the SDK")
+
+    print("/* Generated by scripts/public-sdk-view.py -- do not edit. */")
+    print("/* Private headers xnu includes only without MODULES_SUPPORTED, */")
+    print("/* pre-guarded so they expand to nothing, as in the public SDK. */")
+    print("#ifndef _MINIDARWIN_PUBLIC_SDK_VIEW_H_")
+    print("#define _MINIDARWIN_PUBLIC_SDK_VIEW_H_")
+    for line in lines:
+        print(line)
+    if unguardable:
+        print("/* Still included: #pragma once, so there is no guard to define. */")
+        for line in unguardable:
+            print(line)
+    print("#endif")
+
+
+if __name__ == "__main__":
+    main()

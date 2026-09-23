@@ -1,7 +1,7 @@
 # Stage 6: the first userland -- shell_cmds targets.
 # Built as shell_cmds.xcodeproj builds each target (Release): one tool per
-# target, linked against libSystem and nothing else, man pages as the target
-# installs them.
+# target, linked against libSystem plus whatever the target's OTHER_LDFLAGS
+# name, man pages as the target installs them.
 # Not reproduced: apple-generic versioning's generated <tool>_vers.c (the
 # __<tool>VersionString symbol), which nothing references; and the "All"
 # aggregate's install-files.sh, which hardlinks id to groups and whoami.
@@ -10,6 +10,7 @@
 , sources
 , toolchain
 , shGenerated
+, libedit
 , bison
 }:
 
@@ -22,8 +23,8 @@ let
   #   defines     GCC_PREPROCESSOR_DEFINITIONS -- a target setting replaces
   #               the project's __FBSDID=__RCSID, it does not add to it
   #   includes    USER_HEADER_SEARCH_PATHS, relative to the build directory
-  #   headers     { <name> = <file>; } -- <name> found by -I for this target
-  #               only, for a header the SDK does not have yet
+  #   libraries   built dylibs this target links (OTHER_LDFLAGS), each with
+  #               passthru.headers, passthru.installName and a -l name
   #   cflags      other compiler settings that change the result or can fail it
   #   man         { <file in the tarball> = <installed path>; }
   #   allowUndefined  imports nothing in the tree defines yet, with the reason
@@ -64,15 +65,9 @@ let
     sh = {
       installDir = "/usr/local/bin";
       product = "ash";
-      # NO_HISTORY: OTHER_LDFLAGS = -ledit, and libedit is not built.
-      # FreeBSD's supported no-editing build: histedit.c's fc and bind become
-      # stubs that say so, which is what the builtins table (generated with
-      # history) then points at. input.c still includes <histedit.h> for the
-      # EditLine type, so libedit's header -- installed verbatim to
-      # /usr/include by its project -- is on this target's path alone.
-      defines = [ "SHELL" "NO_HISTORY" ];
+      defines = [ "SHELL" ];
       includes = [ "BUILT_PRODUCTS_DIR" "sh" ];
-      headers = { "histedit.h" = "${sources.libedit}/src/histedit.h"; };
+      libraries = [{ pkg = libedit; l = "edit"; }]; # OTHER_LDFLAGS = -ledit
       cflags = [
         "-Werror=incompatible-pointer-types" # GCC_TREAT_INCOMPATIBLE_POINTER_TYPE_WARNINGS_AS_ERRORS
         "-Werror=return-type" # GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR
@@ -138,6 +133,9 @@ let
       holes = lib.attrNames (t.allowUndefined or { });
       srcs = sourceLists.${name};
       yaccs = lib.filter (lib.hasSuffix ".y") srcs;
+      libs = t.libraries or [ ];
+      expectedDeps = lib.sort (a: b: a < b)
+        ([ "/usr/lib/libSystem.B.dylib" ] ++ map (l: l.pkg.installName) libs);
       needsBuilt = lib.any (lib.hasPrefix builtPrefix) srcs;
     in
     assert lib.assertMsg (needsBuilt -> t ? builtProducts)
@@ -148,8 +146,6 @@ let
         mkdir -p BUILT_PRODUCTS_DIR
         cp --no-preserve=mode -r ${t.builtProducts}/. BUILT_PRODUCTS_DIR/
       ''}
-      ${lib.concatStringsSep "\n" (lib.mapAttrsToList
-        (h: f: "install -Dm644 ${f} include/${name}/${h}") (t.headers or { }))}
       ${lib.concatMapStringsSep "\n" (y: ''
         mkdir -p derived/${name}
         bison -y -o ${compiledPath name y} ${y}
@@ -157,13 +153,14 @@ let
       md_compile $PWD/o/${name} "$CC" ${lib.escapeShellArgs cflags} \
         ${lib.escapeShellArgs (map (d: "-D${d}") (t.defines or defines))} \
         ${lib.concatMapStringsSep " " (i: "-iquote $PWD/${i}") (t.includes or [ ])} \
-        ${lib.optionalString (t ? headers) "-I$PWD/include/${name}"} \
+        ${lib.concatMapStringsSep " " (l: "-I${l.pkg.headers}/usr/include") libs} \
         ${lib.escapeShellArgs (t.cflags or [ ])} \
         -- ${lib.concatMapStringsSep " " (f: "$PWD/${compiledPath name f}") srcs}
       objs=()
       while IFS= read -r o; do objs+=( "$o" ); done < <(find $PWD/o/${name} -name '*.o' | sort)
       # -undefined error, except for the symbols declared absent above.
       "$CC" ${lib.escapeShellArgs ldflags} \
+        ${lib.concatMapStringsSep " " (l: "-L${l.pkg}/usr/lib -l${l.l}") libs} \
         ${lib.concatMapStringsSep " " (s: lib.escapeShellArg "-Wl,-U,${s}") holes} \
         -o $PWD/bin/${name} "''${objs[@]}"
 
@@ -171,8 +168,8 @@ let
       md_verify_signed $PWD/bin/${name}
 
       deps=$($OTOOL -L $PWD/bin/${name} | tail -n +2 | awk '{ print $1 }' | sort -u)
-      if [ "$deps" != "/usr/lib/libSystem.B.dylib" ]; then
-        echo "shell_cmds: ${name} links something other than libSystem:" >&2
+      if [ "$deps" != ${lib.escapeShellArg (lib.concatStringsSep "\n" expectedDeps)} ]; then
+        echo "shell_cmds: ${name} links other than ${lib.concatStringsSep ", " expectedDeps}:" >&2
         echo "$deps" >&2
         exit 1
       fi

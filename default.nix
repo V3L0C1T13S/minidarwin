@@ -55,6 +55,9 @@ lib.makeScope pkgs.newScope (self: with self; {
 
   sdkTest = callPackage ./pkgs/sdk-test.nix { toolchain = toolchainStage1; };
 
+  # For consumers written against Apple's public SDK: -include this first.
+  publicSdkView = callPackage ./pkgs/public-sdk-view.nix { };
+
   #### stage 2: the kernel interface ##########################################
 
   libsyscall = callPackage ./pkgs/libsystem/libsyscall.nix {
@@ -255,6 +258,15 @@ lib.makeScope pkgs.newScope (self: with self; {
 
   # Host tool output: the sources the `sh` target generates before compiling.
   shGenerated = callPackage ./pkgs/shell-cmds/sh-generated.nix { };
+
+  # libncurses.5.4.dylib and libedit.3.dylib: what sh links for line editing.
+  ncursesGenerated = callPackage ./pkgs/ncurses/ncurses-generated.nix { };
+  ncurses = callPackage ./pkgs/ncurses/ncurses.nix {
+    toolchain = toolchainStage3;
+  };
+  libedit = callPackage ./pkgs/libedit/libedit.nix {
+    toolchain = toolchainStage3;
+  };
 
   # The shell_cmds tools -- the first executables, C-only against libSystem.
   shellCmds = callPackage ./pkgs/shell-cmds/shell-cmds.nix {

@@ -46,6 +46,8 @@
             libcxxDylib
             sdkStage4
             toolchainStage4
+            ncurses
+            libedit
             shellCmds
             rootfs
             rootfsRelease
