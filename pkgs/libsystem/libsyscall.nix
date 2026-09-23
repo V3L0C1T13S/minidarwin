@@ -4,6 +4,7 @@
 , mkDarwinPackage
 , sources
 , toolchain
+, systemFrameworkHeaders
 , mig
 , perl
 , targetArch
@@ -112,6 +113,8 @@ mkDarwinPackage {
       # Needs <arm64/machine_machdep.h> and <kern/arithmetic_128.h> from kernel tree; expose only those subdirs to avoid shadowing SDK <mach/*.h>.
       -I$obj/xnuinc
       -I$MINIDARWIN_SYSROOT/usr/local/internal_hdr/include
+      # SYSTEM_HEADER_SEARCH_PATHS (Libsyscall.xcconfig).
+      -iwithsysroot ${systemFrameworkHeaders}
     )
 
     cflags=(

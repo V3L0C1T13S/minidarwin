@@ -47,6 +47,7 @@
             sdkStage4
             toolchainStage4
             ncurses
+            terminfo
             libedit
             shellCmds
             rootfs

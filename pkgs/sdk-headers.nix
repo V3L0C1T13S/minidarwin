@@ -24,7 +24,9 @@ let
 
   migArch = if targetArch == "aarch64" then "armv7" else "i386";
 
-  unifdefFlags = lib.escapeShellArgs [
+  # xnu's installhdrs unifdef sets (makedefs/MakeInc.def), less the platform
+  # part. They differ only in MODULES_SUPPORTED, so they are spelled once.
+  commonUnifdef = [
     "-UMACH_KERNEL_PRIVATE"
     "-UBSD_KERNEL_PRIVATE"
     "-UIOKIT_KERNEL_PRIVATE"
@@ -35,8 +37,6 @@ let
     "-UKERNEL_PRIVATE"
     "-UKERNEL"
     "-DPRIVATE"
-    # SFPINCFRAME not SPINCFRAME: flat include tree needs textual private-header includes.
-    "-UMODULES_SUPPORTED"
     "-UDRIVERKIT"
     "-UEXCLAVEKIT"
     "-UEXCLAVECORE"
@@ -49,6 +49,22 @@ let
     "-UXNU_PLATFORM_WatchOS"
     "-UXNU_PLATFORM_BridgeOS"
   ];
+
+  # SPINCFRAME_UNIFDEF: usr/include. The internal SDK's /usr/local/include --
+  # what Apple builds its userland against. With MODULES_SUPPORTED defined,
+  # public headers do not textually include their *_private.h companions,
+  # as in every SDK Apple ships.
+  unifdefFlags = lib.escapeShellArgs (commonUnifdef ++ [ "-DMODULES_SUPPORTED" ]);
+
+  # SFPINCFRAME_UNIFDEF: System.framework/PrivateHeaders. The same headers
+  # with those textual includes kept. The libsystem members put this
+  # directory first (SYSTEM_HEADER_SEARCH_PATHS in their xcconfigs) and rely
+  # on it: libsyscall's fcntl wrapper gets F_OPENFROM etc. from
+  # <sys/fcntl_private.h> by way of <fcntl.h>.
+  sfUnifdefFlags = lib.escapeShellArgs (commonUnifdef ++ [ "-UMODULES_SUPPORTED" ]);
+
+  # Relative to the sysroot; what the members pass to -iwithsysroot.
+  systemFrameworkHeaders = "/System/Library/Frameworks/System.framework/PrivateHeaders";
 
   migPublic = [
     "clock" "clock_priv" "clock_reply" "exc" "host_priv" "host_security"
@@ -254,8 +270,8 @@ stdenvNoCC.mkDerivation {
     # Strip kernel-only material via unifdef.
     # -m edits in place; -o with existing file silently empties it.
     md_unifdef() {
-      local f="$1" rc=0
-      unifdef -m ${unifdefFlags} "$f" || rc=$?
+      local f="$1" rc=0; shift
+      unifdef -m "$@" "$f" || rc=$?
       if [ "$rc" -ge 2 ]; then
         echo "unifdef failed on $f" >&2
         return 1
@@ -263,8 +279,27 @@ stdenvNoCC.mkDerivation {
       return 0
     }
 
+    # System.framework/PrivateHeaders. Its install lists
+    # (INSTALL_SF_MI_LCL_LIST = DATAFILES + PRIVATE_DATAFILES) are the same
+    # headers as usr/include's, and the two renderings differ only where a
+    # header tests MODULES_SUPPORTED -- so those are the headers it holds.
+    # For every other header a member's search falls through to an identical
+    # usr/include copy. sforig/ keeps the sources, checked again below.
+    sfh=$PWD/sfheaders
+    sforig=$PWD/sforig
     while IFS= read -r -d "" f; do
-      md_unifdef "$f" || exit 1
+      rel=''${f#$inc/}
+      install -Dm644 "$f" "$sforig/$rel"
+      install -Dm644 "$f" "$sfh/$rel"
+      md_unifdef "$sfh/$rel" ${sfUnifdefFlags} || exit 1
+    done < <(grep -rlZ --include='*.h' MODULES_SUPPORTED $inc)
+    if [ -z "$(ls -A $sfh 2>/dev/null)" ]; then
+      echo "no header tests MODULES_SUPPORTED: System.framework would be empty" >&2
+      exit 1
+    fi
+
+    while IFS= read -r -d "" f; do
+      md_unifdef "$f" ${unifdefFlags} || exit 1
     done < <(find $inc -name '*.h' -print0)
 
     # Generate Mach RPC headers via mig.
@@ -548,6 +583,31 @@ stdenvNoCC.mkDerivation {
     cp -R include $out/usr/include
     cp -R internal_hdr $out/usr/local/internal_hdr
 
+    # A framework's layout: Versions/B holds it, the rest are links.
+    fw=$out/System/Library/Frameworks/System.framework
+    mkdir -p $fw/Versions/B
+    cp -R sfheaders $fw/Versions/B/PrivateHeaders
+    ln -s B $fw/Versions/Current
+    ln -s Versions/Current/PrivateHeaders $fw/PrivateHeaders
+    [ -d "$out${systemFrameworkHeaders}" ]
+
+    # Each framework header's usr/include twin must still be the SPINCFRAME
+    # rendering of the same source -- a later edit to one but not the other
+    # would give members and everyone else different declarations.
+    ntwins=0
+    while IFS= read -r -d "" f; do
+      ntwins=$((ntwins + 1))
+      rel=''${f#sforig/}
+      cp "$f" twin.h; chmod u+w twin.h
+      md_unifdef twin.h ${unifdefFlags} || exit 1
+      if ! cmp -s twin.h "$out/usr/include/$rel"; then
+        echo "usr/include/$rel was changed after unifdef; System.framework's copy was not" >&2
+        exit 1
+      fi
+    done < <(find sforig -name '*.h' -print0)
+    [ "$ntwins" -gt 0 ]
+    echo "System.framework: $ntwins headers, each still usr/include's twin"
+
     mkdir -p $out/usr/lib/system
 
     # Empty header check.
@@ -577,7 +637,7 @@ stdenvNoCC.mkDerivation {
     runHook postInstall
   '';
 
-  passthru = { inherit machoArch; };
+  passthru = { inherit machoArch systemFrameworkHeaders; };
 
   meta.description = "Darwin SDK headers generated from pinned Apple sources";
 }

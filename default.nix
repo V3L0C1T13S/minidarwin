@@ -46,6 +46,10 @@ lib.makeScope pkgs.newScope (self: with self; {
 
   sdkHeaders = callPackage ./pkgs/sdk-headers.nix { };
 
+  # Sysroot-relative System.framework/PrivateHeaders (xnu's SFPINCFRAME): what
+  # the libsystem members' xcconfigs put first in SYSTEM_HEADER_SEARCH_PATHS.
+  systemFrameworkHeaders = sdkHeaders.systemFrameworkHeaders;
+
   # Has headers but no libraries - links are -nostdlib.
   toolchainStage1 = mkToolchain {
     name = "minidarwin-toolchain-stage1";
@@ -54,9 +58,6 @@ lib.makeScope pkgs.newScope (self: with self; {
   };
 
   sdkTest = callPackage ./pkgs/sdk-test.nix { toolchain = toolchainStage1; };
-
-  # For consumers written against Apple's public SDK: -include this first.
-  publicSdkView = callPackage ./pkgs/public-sdk-view.nix { };
 
   #### stage 2: the kernel interface ##########################################
 
@@ -261,6 +262,8 @@ lib.makeScope pkgs.newScope (self: with self; {
 
   # libncurses.5.4.dylib and libedit.3.dylib: what sh links for line editing.
   ncursesGenerated = callPackage ./pkgs/ncurses/ncurses-generated.nix { };
+  ncursesTic = callPackage ./pkgs/ncurses/tic.nix { };
+  terminfo = callPackage ./pkgs/ncurses/terminfo.nix { };
   ncurses = callPackage ./pkgs/ncurses/ncurses.nix {
     toolchain = toolchainStage3;
   };

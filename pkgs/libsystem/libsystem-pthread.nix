@@ -4,6 +4,7 @@
 , mkDarwinPackage
 , sources
 , toolchain
+, systemFrameworkHeaders
 , targetArch
 , umbrellaLink
 , libsystemStage1 ? null
@@ -80,7 +81,8 @@ mkDarwinPackage {
 #include <stdbool.h>
 extern bool _os_xbs_chrooted;'
 
-    incflags=( -I$PWD/src/resolver -I$PWD/private -I$PWD/include -I$PWD ) # source headers ahead of sysroot
+    incflags=( -I$PWD/src/resolver -I$PWD/private -I$PWD/include -I$PWD # source headers ahead of sysroot
+               -iwithsysroot ${systemFrameworkHeaders} ) # SYSTEM_HEADER_SEARCH_PATHS
 
     sources=()
     for f in ${lib.concatStringsSep " " codeFiles}; do

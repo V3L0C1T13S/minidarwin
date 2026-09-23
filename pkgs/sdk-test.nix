@@ -2,6 +2,19 @@
 { lib, stdenvNoCC, writeText, toolchain, sdkHeaders }:
 
 let
+  posixProbe = writeText "sdk-posix-probe.c" ''
+    #define _XOPEN_SOURCE 600
+    #include <sys/ioctl.h>
+    #include <termios.h>
+    #include <netinet/in.h>
+    #include <arpa/inet.h>
+  '';
+
+  privateProbe = writeText "sdk-private-probe.c" ''
+    #include <fcntl.h>
+    int probe = F_OPENFROM;
+  '';
+
   probe = writeText "sdk-probe.c" ''
     /* one header per SDK project */
     #include <stdio.h>
@@ -98,8 +111,30 @@ stdenvNoCC.mkDerivation {
       echo "IMPURE: non-store directory on the include search path" >&2
       exit 1
     fi
-    if [ "$(echo "$paths" | wc -l)" -ne 2 ]; then
-      echo "unexpected number of include directories (want clang builtins + sysroot)" >&2
+    # Clang's builtins, then the sysroot's usr/include and -- because the
+    # SDK has one, as Apple's do -- its default framework directory.
+    sysroot=${sdkHeaders}
+    want=$(printf ' %s\n' "$sysroot/usr/include" "$sysroot/System/Library/Frameworks (framework directory)")
+    if [ "$(echo "$paths" | wc -l)" -ne 3 ] ||
+       ! echo "$paths" | head -1 | grep -q '/lib/clang/[0-9]*/include$' ||
+       [ "$(echo "$paths" | tail -n +2)" != "$want" ]; then
+      echo "unexpected include directories (want clang builtins, usr/include, System/Library/Frameworks)" >&2
+      exit 1
+    fi
+
+    # usr/include is xnu's SPINCFRAME rendering: no public header textually
+    # includes its *_private.h, so strict-POSIX code sees what it would in
+    # Apple's SDK (with the textual includes, <net/if_dl.h> needs u_char).
+    echo "== strict POSIX (_XOPEN_SOURCE=600)"
+    $CC -std=gnu99 -fsyntax-only -x c ${posixProbe}
+
+    # System.framework/PrivateHeaders is the SFPINCFRAME rendering, which the
+    # libsystem members search first: there <fcntl.h> brings in
+    # <sys/fcntl_private.h>, and without it, it does not.
+    echo "== System.framework/PrivateHeaders"
+    $CC -fsyntax-only -x c -iwithsysroot ${sdkHeaders.systemFrameworkHeaders} ${privateProbe}
+    if $CC -fsyntax-only -x c ${privateProbe} 2>/dev/null; then
+      echo "usr/include's <fcntl.h> exposes fcntl_private.h: textual private include is back" >&2
       exit 1
     fi
 

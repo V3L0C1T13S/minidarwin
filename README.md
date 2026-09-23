@@ -23,6 +23,7 @@ nix build .#libmachO               # dyld's Mach-O reader (stage 5)
 nix build .#libcxxDylib .#libcxxabiDylib
 nix build .#sdkStage4              # sysroot where plain `-lc++` links (RTTI included)
 nix build .#ncurses .#libedit     # libncurses.5.4.dylib, libedit.3.dylib (stage 6)
+nix build .#terminfo               # /usr/share/terminfo (stage 6)
 nix build .#shellCmds             # echo, find, id, ash, ... from shell_cmds (stage 6)
 nix build .#rootfs                 # assembled tree at real paths (/usr/lib/system, etc.)
 nix build .#rootfsRelease          # that tree as a release: tarball, manifest, spec, bundle
@@ -72,18 +73,19 @@ All files are reproducible, and can be verified 1:1 from the build workflow too.
 
 | Output | Contents |
 |---|---|
-| `sdk` | ~1,720 headers - xnu, Libc, Libm, libpthread, libplatform, libmalloc, libdispatch, etc. |
+| `sdk` | ~1,720 headers - xnu, Libc, Libm, libpthread, libplatform, libmalloc, libdispatch, etc. - laid out like Apple's internal SDK: `usr/include` is xnu's `SPINCFRAME` rendering, and `System.framework/PrivateHeaders` holds the `SFPINCFRAME` renderings the libsystem members search first. |
 | `libsyscall` | `libsystem_kernel.dylib` - 1,561 exports, 639 objects, ad-hoc signed |
 | `libcxx` / `libunwind` / `libcxxabi` | LLVM runtimes as static archives (283 builtins objects + 1,677 libc++ headers) |
 | `libSystem` | Umbrella `libSystem.B.dylib` re-exporting 10 members under `/usr/lib/system` |
 | `libcxxDylib` / `libcxxabiDylib` | `/usr/lib/libc++.1.dylib` + `libc++abi.dylib` |
 | `sdkStage4` / `toolchainStage4` | The C++-linkable sysroot: stage 3 plus those two dylibs, so `-lc++` alone resolves `___dynamic_cast` and the `__cxxabiv1` type_info vtables. What `nix develop` gives you. |
-| `ncurses` / `libedit` | Stage 6: `/usr/lib/libncurses.5.4.dylib` and `/usr/lib/libedit.3.dylib` (plus their compatibility symlinks and libedit's man pages), from Apple's `ncurses` and `libedit` projects. What `ash` links for line editing. No terminfo database yet, so libedit falls back to dumb-terminal settings. |
+| `ncurses` / `libedit` | Stage 6: `/usr/lib/libncurses.5.4.dylib` and `/usr/lib/libedit.3.dylib` (plus their compatibility symlinks and libedit's man pages), from Apple's `ncurses` and `libedit` projects. What `ash` links for line editing. |
+| `terminfo` | Stage 6: `/usr/share/terminfo`, compiled from ncurses' `terminfo.src` by a `tic` built for the build machine, as ncurses' `run_tic.sh` does. All 2,684 entries are byte-identical to macOS 26's (aliases are separate files rather than hardlinks). |
 | `shellCmds` | Stage 6: twelve `shell_cmds` tools at their real paths, plus the man pages each target installs: `/bin/{echo,hostname,pwd,realpath}`, `/usr/bin/{false,find,id,true,uname,who,yes}`, and the Almquist shell as `/usr/local/bin/ash` (the `sh` target's own name and path; macOS's `/bin/sh` comes from `bash`), linked against libedit. The rest link against `libSystem` only. Imports the tree cannot satisfy yet are declared: utmpx for `who` (`utmpx-darwin.c` needs ASL), passwd/group lookups (`system_info`), and `environ` for `find -exec` and `ash` (defined by libdyld). |
 | `rootfs` | 15 dylibs and 12 executables assembled at real paths with whole-tree checks (load commands resolve, no undeclared undefined symbols). Nothing runs yet - no `/usr/lib/dyld`. |
 | `rootfsRelease` | `rootfs` packed for distribution: a reproducible `.tar.gz`, a `manifest.yaml` (type, mode and SHA-256 of every path, plus a Merkle tree digest), a `spec.yaml` pinning both, and a `.bundle.zip` of all three. |
 
-`sdkTest` asserts a 2-entry include path (clang builtins + sysroot). `runtimesTest` links C++ against the archives and checks 151 remaining undefs are all C. `libsystemTest` links a C program against `-lSystem` only. `cxxLinkTest` links a C++ program that downcasts, cross-casts through a virtual base, uses `typeid` and throws, against nothing but `-lc++`.
+`sdkTest` asserts the include path is exactly clang's builtins, the sysroot's `usr/include` and its `System/Library/Frameworks`, that strict-POSIX code compiles against `usr/include`, and that `System.framework/PrivateHeaders` (and only it) gives the libsystem members xnu's private declarations. `runtimesTest` links C++ against the archives and checks 151 remaining undefs are all C. `libsystemTest` links a C program against `-lSystem` only. `cxxLinkTest` links a C++ program that downcasts, cross-casts through a virtual base, uses `typeid` and throws, against nothing but `-lc++`.
 
 ## Releases and verification
 
@@ -115,7 +117,7 @@ Not every `Libsystem/requiredlibs` entry is buildable from released source. Seve
 
 Each member's `allowUndefined` lists exactly which symbols it expects from absent libs - no blanket `dynamic_lookup`. `rootfs` checks that every undefined import is declared and every declaration is still needed.
 
-No `/usr/lib/dyld` yet (`libmach_o.a` builds; dyld link not started). Userland is twelve `shell_cmds` tools, including `find`, `id` and `ash` (with libedit and libncurses, but no terminfo database); no `bash`, so no `/bin/sh`. No `launchd` - last open source was 2013 and depends on unreleased `libxpc`.
+No `/usr/lib/dyld` yet (`libmach_o.a` builds; dyld link not started). Userland is twelve `shell_cmds` tools, including `find`, `id` and `ash` (with libedit, libncurses and the terminfo database); no `bash`, so no `/bin/sh`. No `launchd` - last open source was 2013 and depends on unreleased `libxpc`.
 
 ## Updating sources
 

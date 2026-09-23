@@ -14,7 +14,6 @@
 , sources
 , toolchain
 , ncursesGenerated
-, publicSdkView
 }:
 
 let
@@ -42,14 +41,7 @@ let
     "-std=gnu99" # GCC_C_LANGUAGE_STANDARD
     "-Os"
     "-Werror=format-nonliteral" # WARNING_CFLAGS
-  ] ++ publicView;
-
-  # The SDK is unifdef'd -DPRIVATE -UMODULES_SUPPORTED, so its <net/if.h> ends
-  # by including <net/if_private.h>, which pulls in <net/if_dl.h>, which uses
-  # u_char. Under _XOPEN_SOURCE=600 <sys/types.h> does not define u_char, so
-  # anything that includes <sys/ioctl.h> (lib_setup.c, lib_tstp.c, ...) fails.
-  # Apple's public SDK has no such include: publicSdkView restores that view.
-  publicView = [ "-include" "${publicSdkView}/include/minidarwin/public-sdk-view.h" ];
+  ];
 
   # HEADER_SEARCH_PATHS (project).
   includes = [ "BUILT_PRODUCTS_DIR" "ncurses/include" "ncurses/ncurses" "ncurses/progs" ];
@@ -115,7 +107,7 @@ mkDarwinPackage {
 
     # The two derived_sources.sh steps that run the target's preprocessor.
     incdir="-IBUILT_PRODUCTS_DIR -Incurses/ncurses -Incurses/include"
-    macros="-DHAVE_CONFIG_H -U_XOPEN_SOURCE -D_XOPEN_SOURCE=600 -D_XOPEN_SOURCE_EXTENDED -DNDEBUG -DSIGWINCH=28 ${toString publicView}"
+    macros="-DHAVE_CONFIG_H -U_XOPEN_SOURCE -D_XOPEN_SOURCE=600 -D_XOPEN_SOURCE_EXTENDED -DNDEBUG -DSIGWINCH=28"
     sh ncurses/ncurses/tty/MKexpanded.sh "$CC -E" $incdir $macros \
       > BUILT_PRODUCTS_DIR/expanded.c
     sh ncurses/ncurses/base/MKlib_gen.sh "$CC -E -DHAVE_CONFIG $incdir $macros" \

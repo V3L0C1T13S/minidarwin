@@ -6,6 +6,7 @@
 , sources
 , perl
 , toolchain
+, systemFrameworkHeaders
 , umbrellaLink
 , targetArch
 , libsystemStage1 ? null
@@ -227,9 +228,18 @@ mkDarwinPackage {
 
     # Patch Headers: rewrites __DARWIN_ALIAS_C -> LIBC_ALIAS_C (keyed on VARIANT_*) so variant targets get distinct symbols.
     # Runs patch_headers_variants.pl over SDK headers; Libc's own sys/cdefs.h defines LIBC_ALIAS_C. No-op on headers without aliases.
+    # Its input is SDK_SYSTEM_FRAMEWORK_HEADERS: System.framework's headers.
+    # Ours holds only the ones that differ from usr/include, so the input is
+    # usr/include with those laid over it -- what a search of the framework,
+    # then usr/include, finds. Named include/ so the output is too.
     derived=$PWD/derived
+    sdkview=$PWD/sdkview/include
+    mkdir -p $sdkview
+    cp -R "$MINIDARWIN_SYSROOT/usr/include/." $sdkview/
+    chmod -R u+w $sdkview
+    cp -R "$MINIDARWIN_SYSROOT${systemFrameworkHeaders}/." $sdkview/
     perl xcodescripts/patch_headers_variants.pl \
-      "$MINIDARWIN_SYSROOT/usr/include" "$derived/System.framework/Versions/B"
+      "$sdkview" "$derived/System.framework/Versions/B"
     patched=$derived/System.framework/Versions/B/include
     [ -e "$patched/sys/fcntl.h" ] || { echo "Patch Headers produced nothing" >&2; exit 1; }
     grep -q 'LIBC_ALIAS_CREAT' "$patched/sys/fcntl.h" ||

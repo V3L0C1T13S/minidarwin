@@ -4,6 +4,7 @@
 , mkDarwinPackage
 , sources
 , toolchain
+, systemFrameworkHeaders
 , umbrellaLink
 , libsystemStage1 ? null
 }:
@@ -56,7 +57,9 @@ mkDarwinPackage {
 
     md_log "collections: ''${#sources[@]} objects"
     md_compile $obj "$CC" ${lib.escapeShellArgs cflags} \
-      -I$PWD/collections/PublicHeader -- "''${sources[@]}"
+      -I$PWD/collections/PublicHeader \
+      -I$MINIDARWIN_SYSROOT${systemFrameworkHeaders} \
+      -- "''${sources[@]}" # collections.xcconfig HEADER_SEARCH_PATHS
 
     md_dylib libsystem_collections.dylib \
       /usr/lib/system/libsystem_collections.dylib $obj \

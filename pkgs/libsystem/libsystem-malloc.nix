@@ -5,6 +5,7 @@
 , mkDarwinPackage
 , sources
 , toolchain
+, systemFrameworkHeaders
 , umbrellaLink
 , python3
 , libsystemStage1 ? null
@@ -97,7 +98,8 @@ mkDarwinPackage {
     python3 ${../../scripts/dtrace-provider-stub.py} \
       $PWD/src/magmallocProvider.d $derived/magmallocProvider.h
 
-    incflags=( -I$derived -I$PWD/include -I$PWD/private -I$PWD/resolver -I$PWD/src )
+    incflags=( -I$derived -I$PWD/include -I$PWD/private -I$PWD/resolver -I$PWD/src
+               -iwithsysroot ${systemFrameworkHeaders} ) # SYSTEM_HEADER_SEARCH_PATHS
 
     sources=()
     for f in ${lib.concatStringsSep " " codeFiles}; do

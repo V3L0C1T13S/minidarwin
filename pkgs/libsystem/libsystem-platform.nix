@@ -5,6 +5,7 @@
 , mkDarwinPackage
 , sources
 , toolchain
+, systemFrameworkHeaders
 , umbrellaLink
 , targetArch
 , libsystemStage1 ? null
@@ -70,7 +71,8 @@ mkDarwinPackage {
       --replace-fail "$memsetShim" \
       '/* minidarwin: superseded by the _memset alias; see libsystem-platform.nix. */'
 
-    incflags=( -I$PWD/private -I$PWD/include -I$PWD/internal -I$PWD/src/os/resolver )
+    incflags=( -I$PWD/private -I$PWD/include -I$PWD/internal -I$PWD/src/os/resolver
+               -iwithsysroot ${systemFrameworkHeaders} ) # SYSTEM_HEADER_SEARCH_PATHS
 
     # All components: generic + arch subdir per component; exclavekit omitted (separate SDK, collides with os/lock.c).
     mapfile -t sources < <(md_glob \

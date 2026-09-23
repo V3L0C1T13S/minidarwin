@@ -122,6 +122,8 @@ if [ "$changed" = 1 ]; then
   # Stage 6: the libraries sh links for line editing.
   gen_sources ncurses ncurses.xcodeproj/project.pbxproj \
     libncurses pkgs/ncurses/ncurses-sources.nix
+  gen_sources ncurses ncurses.xcodeproj/project.pbxproj \
+    tic_static pkgs/ncurses/tic-sources.nix
   gen_sources libedit libedit.xcodeproj/project.pbxproj \
     libedit pkgs/libedit/libedit-sources.nix
 

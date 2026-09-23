@@ -12,7 +12,6 @@
 , sources
 , toolchain
 , ncurses
-, publicSdkView
 }:
 
 let
@@ -21,11 +20,6 @@ let
   cflags = [
     "-std=gnu99" # GCC_C_LANGUAGE_STANDARD
     "-Os"
-    # The public SDK's view of xnu (see public-sdk-view.nix). Without it x86_64
-    # breaks: <sys/ioctl.h> reaches <netinet/in.h> through sys/sockio_private.h
-    # and its ntohl collides with <i386/endian.h>'s.
-    "-include"
-    "${publicSdkView}/include/minidarwin/public-sdk-view.h"
   ];
 
   # USER_HEADER_SEARCH_PATHS = src, plus what Xcode's header map resolves by
