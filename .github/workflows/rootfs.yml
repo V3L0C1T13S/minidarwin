@@ -21,7 +21,7 @@ jobs:
     name: mdrootfs (linux)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - run: python3 --version && python3 scripts/test_mdrootfs.py -v
 
   build:
@@ -41,7 +41,7 @@ jobs:
           - arch: x86_64
             scope: .#cross.x86_64.
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: cachix/install-nix-action@v31
         with:
@@ -113,7 +113,7 @@ jobs:
       - name: Attest
         id: attest
         if: github.event_name == 'push'
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: dist/*
 
@@ -121,7 +121,7 @@ jobs:
         if: github.event_name == 'push'
         run: cp '${{ steps.attest.outputs.bundle-path }}' 'dist/${{ steps.release.outputs.name }}.intoto.jsonl'
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.release.outputs.name }}
           path: dist/
@@ -139,9 +139,9 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
@@ -190,7 +190,7 @@ jobs:
 
       - name: Attest
         id: attest
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: |
             dist/*.spec.yaml
@@ -198,7 +198,7 @@ jobs:
 
       - run: cp '${{ steps.attest.outputs.bundle-path }}' dist/release.intoto.jsonl
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: dist/*
           fail_on_unmatched_files: true
