@@ -97,6 +97,7 @@ mkDarwinPackage {
 
   passthru.allowUndefined = allowUndefined; # for rootfs closure check
   passthru.headers = installedHeaders;
+  passthru.installName = "/usr/lib/libncurses.${ver}.dylib";
 
   buildPhase = ''
     runHook preBuild

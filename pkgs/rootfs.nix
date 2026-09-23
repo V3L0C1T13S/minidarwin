@@ -1,7 +1,8 @@
 # Stage 7: assembled rootfs (closed set of Mach-Os + whole-tree checks).
 # Contains libSystem (+ members), libc++.1.dylib, libc++abi.dylib and stage 6:
-# the shell_cmds tools, the libedit + libncurses that sh links, and the
-# terminfo database libncurses reads; no dyld yet so nothing runs.
+# the shell_cmds tools, the libedit + libncurses that sh links, the terminfo
+# database libncurses reads, and ls with its libutil; no dyld yet so nothing
+# runs.
 { lib
 , mkDarwinPackage
 , toolchain
@@ -14,15 +15,17 @@
 , terminfo
 , libedit
 , shellCmds
+, libutil
+, fileCmds
 }:
 
 let
-  members = [ libSystem libsystemTree2 libcxxDylib libcxxabiDylib ncurses terminfo libedit shellCmds ];
+  members = [ libSystem libsystemTree2 libcxxDylib libcxxabiDylib ncurses terminfo libedit shellCmds libutil fileCmds ];
 
   # Union of passthru.allowUndefined from all members.
   declared =
     lib.foldl' (acc: p: acc // (p.allowUndefined or { })) { }
-      (lib.attrValues libsystemPass2 ++ [ libcxxDylib libcxxabiDylib ncurses libedit shellCmds ]);
+      (lib.attrValues libsystemPass2 ++ [ libcxxDylib libcxxabiDylib ncurses libedit shellCmds libutil fileCmds ]);
 
   # Runtime-provided (dyld defines in loaded process, not in a library).
   runtimeProvided = [ "dyld_stub_binder" ];

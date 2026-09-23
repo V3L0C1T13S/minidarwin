@@ -271,8 +271,21 @@ lib.makeScope pkgs.newScope (self: with self; {
     toolchain = toolchainStage3;
   };
 
+  # libutil.dylib: what ls links for humanize_number.
+  libutil = callPackage ./pkgs/libutil/libutil.nix {
+    toolchain = toolchainStage3;
+  };
+
+  # The *_cmds projects' tools, built per target (pkgs/cmds/mk-cmds.nix).
+  mkCmds = callPackage ./pkgs/cmds/mk-cmds.nix { };
+
   # The shell_cmds tools -- the first executables, C-only against libSystem.
   shellCmds = callPackage ./pkgs/shell-cmds/shell-cmds.nix {
+    toolchain = toolchainStage3;
+  };
+
+  # The file_cmds tools: ls.
+  fileCmds = callPackage ./pkgs/file-cmds/file-cmds.nix {
     toolchain = toolchainStage3;
   };
 

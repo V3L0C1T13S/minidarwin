@@ -50,6 +50,8 @@
             terminfo
             libedit
             shellCmds
+            libutil
+            fileCmds
             rootfs
             rootfsRelease
             mdrootfs;
