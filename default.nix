@@ -251,6 +251,13 @@ lib.makeScope pkgs.newScope (self: with self; {
     toolchain = toolchainStage4;
   };
 
+  #### stage 6: userland ######################################################
+
+  # echo, pwd, uname, who -- the first executables, C-only against libSystem.
+  shellCmds = callPackage ./pkgs/shell-cmds/shell-cmds.nix {
+    toolchain = toolchainStage3;
+  };
+
   #### stage 7: the rootfs ####################################################
 
   # Assembled rootfs (early - later stages add inputs here).

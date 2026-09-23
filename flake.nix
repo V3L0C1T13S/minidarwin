@@ -46,6 +46,7 @@
             libcxxDylib
             sdkStage4
             toolchainStage4
+            shellCmds
             rootfs
             rootfsRelease
             mdrootfs;

@@ -1,5 +1,6 @@
-# Stage 7: assembled rootfs (closed set of dylibs + whole-tree checks).
-# Contains libSystem (+ members), libc++.1.dylib, libc++abi.dylib; no dyld yet so nothing runs.
+# Stage 7: assembled rootfs (closed set of Mach-Os + whole-tree checks).
+# Contains libSystem (+ members), libc++.1.dylib, libc++abi.dylib and the stage 6
+# tools (shell_cmds); no dyld yet so nothing runs.
 { lib
 , mkDarwinPackage
 , toolchain
@@ -8,15 +9,16 @@
 , libsystemPass2
 , libcxxDylib
 , libcxxabiDylib
+, shellCmds
 }:
 
 let
-  members = [ libSystem libsystemTree2 libcxxDylib libcxxabiDylib ];
+  members = [ libSystem libsystemTree2 libcxxDylib libcxxabiDylib shellCmds ];
 
   # Union of passthru.allowUndefined from all members.
   declared =
     lib.foldl' (acc: p: acc // (p.allowUndefined or { })) { }
-      (lib.attrValues libsystemPass2 ++ [ libcxxDylib libcxxabiDylib ]);
+      (lib.attrValues libsystemPass2 ++ [ libcxxDylib libcxxabiDylib shellCmds ]);
 
   # Runtime-provided (dyld defines in loaded process, not in a library).
   runtimeProvided = [ "dyld_stub_binder" ];
@@ -41,7 +43,9 @@ mkDarwinPackage {
           echo "rootfs: $rel provided by more than one input" >&2
           exit 1
         fi
-        install -Dm755 "$f" "$out/$rel"
+        # Keep the exec bit: the release maps it to 0755 vs 0644 (man pages).
+        if [ -x "$f" ]; then mode=755; else mode=644; fi
+        install -Dm$mode "$f" "$out/$rel"
       done < <(find $pkg -type f | sort)
       # Symlinks (libSystem.dylib etc., not found by -type f).
       while IFS= read -r l; do
@@ -55,8 +59,11 @@ mkDarwinPackage {
       done < <(find $pkg -type l | sort)
     done
 
-    find $out -type f -name '*.dylib' | sed "s,^$out,," | sort > $TMPDIR/machos.txt
-    md_log "rootfs: $(wc -l < $TMPDIR/machos.txt | tr -d ' ') dylibs"
+    # Dylibs plus executables (everything under a bin/ or sbin/).
+    find $out -type f \( -name '*.dylib' -o -path '*/bin/*' -o -path '*/sbin/*' \) |
+      sed "s,^$out,," | sort > $TMPDIR/machos.txt
+    ndylibs=$(grep -c '\.dylib$' $TMPDIR/machos.txt || true)
+    md_log "rootfs: $ndylibs dylibs, $(( $(wc -l < $TMPDIR/machos.txt) - ndylibs )) executables"
 
     # Re-verify purity and signature (checked per-library, rechecked for shipped tree).
     while IFS= read -r rel; do
