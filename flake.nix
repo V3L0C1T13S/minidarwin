@@ -46,7 +46,9 @@
             libcxxDylib
             sdkStage4
             toolchainStage4
-            rootfs;
+            rootfs
+            rootfsRelease
+            mdrootfs;
 
           # Stage 4 pass-2 members (pass-1 at legacyPackages.<system>.libsystemPass1).
           inherit (scope.libsystemPass2)
@@ -68,7 +70,7 @@
       checks = forAllSystems (system: pkgs:
         let scope = nativeScope pkgs;
         in {
-          inherit (scope) sdkTest runtimesTest libsystemTest cxxLinkTest;
+          inherit (scope) sdkTest runtimesTest libsystemTest cxxLinkTest releaseTest;
         });
 
       # Full set for nix eval; cross.<arch> retargets it.
@@ -92,6 +94,14 @@
           (nixpkgs.lib.genAttrs targetArches (scopeFor pkgs))) // {
           default = shellFor scope;
         });
+
+      # `nix run .#mdrootfs -- verify --bundle ...` (docs/rootfs-spec.md).
+      apps = forAllSystems (system: pkgs: {
+        mdrootfs = {
+          type = "app";
+          program = "${(nativeScope pkgs).mdrootfs}/bin/mdrootfs";
+        };
+      });
 
       formatter = forAllSystems (system: pkgs: pkgs.nixpkgs-fmt);
     };

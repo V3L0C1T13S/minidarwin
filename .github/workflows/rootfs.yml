@@ -15,20 +15,31 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # The verifier on Linux, with the stock Python.
+  # Cheap, so it runs before anything else.
+  mdrootfs:
+    name: mdrootfs (linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: python3 --version && python3 scripts/test_mdrootfs.py -v
+
   build:
     name: rootfs (${{ matrix.arch }})
     runs-on: macos-15
     timeout-minutes: 180
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     strategy:
       fail-fast: false
       matrix:
         include:
           - arch: aarch64
-            rootfs: .#rootfs
-            checks: .#sdkTest .#runtimesTest .#libsystemTest
+            scope: .#
           - arch: x86_64
-            rootfs: .#cross.x86_64.rootfs
-            checks: .#cross.x86_64.sdkTest .#cross.x86_64.runtimesTest .#cross.x86_64.libsystemTest
+            scope: .#cross.x86_64.
     steps:
       - uses: actions/checkout@v5
 
@@ -65,53 +76,127 @@ jobs:
 
       # -o, not --no-link: the symlinks are the GC roots the trim above reads.
       - name: Build checks
-        run: nix build --print-build-logs -o result-check ${{ matrix.checks }}
+        run: |
+          s='${{ matrix.scope }}'
+          nix build --print-build-logs -o result-check \
+            ${s}sdkTest ${s}runtimesTest ${s}libsystemTest ${s}cxxLinkTest ${s}releaseTest
 
-      - name: Build rootfs
-        run: nix build --print-build-logs -o result-rootfs --print-out-paths ${{ matrix.rootfs }}
-
-      # The tree is already reproducible, so the tarball must add nothing of
-      # its own: sorted names, no owner, and the mtimes the derivation already
-      # fixed to SOURCE_DATE_EPOCH. GNU tar, not bsdtar -- the macOS one has
-      # neither --sort nor a stable header format.
-      - name: Pack tarball
-        id: pack
+      # Tarball, manifest, spec and bundle (docs/rootfs-spec.md). The
+      # derivation already verified them against each other.
+      - name: Build release
+        id: release
         run: |
           set -euo pipefail
-          out=$(readlink -f result-rootfs)
-          # On a tag, the tag names the artifact; otherwise the Libsystem
-          # version the tree was built from.
-          case "$GITHUB_REF" in
-            refs/tags/*) version="${GITHUB_REF#refs/tags/}" ;;
-            *)           version=$(nix eval --raw ${{ matrix.rootfs }}.version) ;;
-          esac
-          name="minidarwin-rootfs-${{ matrix.arch }}-$version"
-          mkdir -p dist
-          nix shell --inputs-from . nixpkgs#gnutar nixpkgs#gzip -c \
-            tar --sort=name --numeric-owner --owner=0 --group=0 \
-                --format=gnu -C "$out" -czf "dist/$name.tar.gz" .
-          (cd dist && shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256")
-          cat "dist/$name.tar.gz.sha256"
-          echo "name=$name" >> "$GITHUB_OUTPUT"
+          s='${{ matrix.scope }}'
+          nix build --print-build-logs -o result-release "${s}rootfsRelease"
+          echo "name=$(nix eval --raw "${s}rootfsRelease.releaseName")" >> "$GITHUB_OUTPUT"
+
+      # Both are cheap -- assembly and packing, not compilation -- and they
+      # are the two steps that turn a reproducible build into reproducible
+      # downloads. A difference fails the build.
+      - name: Check determinism
+        run: |
+          s='${{ matrix.scope }}'
+          nix build --print-build-logs --rebuild "${s}rootfs"
+          nix build --print-build-logs --rebuild "${s}rootfsRelease"
+
+      - name: Collect
+        run: |
+          mkdir dist
+          cp result-release/* dist/
+          chmod u+w dist/*
+          (cd dist && shasum -a 256 *)
+
+      # Provenance for every push, so an Actions download can be traced to
+      # its run as well as a release can. Pull requests (forks especially)
+      # get no OIDC token, and have nothing to publish anyway.
+      - name: Attest
+        id: attest
+        if: github.event_name == 'push'
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/*
+
+      - name: Keep the attestation beside what it attests
+        if: github.event_name == 'push'
+        run: cp '${{ steps.attest.outputs.bundle-path }}' 'dist/${{ steps.release.outputs.name }}.intoto.jsonl'
 
       - uses: actions/upload-artifact@v5
         with:
-          name: ${{ steps.pack.outputs.name }}
+          name: ${{ steps.release.outputs.name }}
           path: dist/
           if-no-files-found: error
 
   release:
     name: release
-    needs: build
+    needs: [mdrootfs, build]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
+      attestations: write
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
+      - uses: actions/checkout@v5
+
       - uses: actions/download-artifact@v5
         with:
           path: dist
           merge-multiple: true
+
+      # Again, off macOS and outside Nix: what a consumer will do.
+      - name: Verify
+        run: |
+          set -euo pipefail
+          for spec in dist/*.spec.yaml; do
+            n="${spec%.spec.yaml}"
+            python3 scripts/mdrootfs.py verify --spec "$spec" --manifest "$n.manifest.yaml" --artifact "$n.tar.gz"
+            python3 scripts/mdrootfs.py verify --spec "$spec" --bundle "$n.bundle.zip"
+          done
+
+      # The published spec names its tag, commit and download URLs. Stamping
+      # refuses a sequence that does not exceed the previous release's, which
+      # is what lets a consumer treat a lower one as a rollback.
+      - name: Stamp specs
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF#refs/tags/}"
+          previous=$(gh release list -R "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases \
+                       --json tagName --jq ".[].tagName | select(. != \"$tag\")" | head -n 1)
+          mkdir -p previous stamped
+          for spec in dist/*.spec.yaml; do
+            file=$(basename "$spec")
+            arch=$(python3 -c 'import sys; sys.path.insert(0, "scripts"); import mdrootfs; print(mdrootfs.load_spec(sys.argv[1]).identity["arch"])' "$spec")
+            args=()
+            if [ -n "$previous" ] &&
+               gh release download "$previous" -R "$GITHUB_REPOSITORY" -D "previous/$arch" \
+                 -p "minidarwin-rootfs-$arch-*.spec.yaml" 2>/dev/null; then
+              args=(--previous previous/$arch/*.spec.yaml)
+            else
+              echo "::notice::$arch: no spec in a previous release; nothing to compare the sequence with"
+            fi
+            python3 scripts/mdrootfs.py stamp "$spec" -o "stamped/$file" \
+              --repository "$GITHUB_REPOSITORY" --tag "$tag" --commit "$GITHUB_SHA" ${args[@]+"${args[@]}"}
+          done
+          mv stamped/*.spec.yaml dist/
+          for spec in dist/*.spec.yaml; do
+            n="${spec%.spec.yaml}"
+            python3 scripts/mdrootfs.py verify --spec "$spec" --manifest "$n.manifest.yaml" --artifact "$n.tar.gz"
+            cat "$spec"
+          done
+          (cd dist && sha256sum -- *.tar.gz *.manifest.yaml *.spec.yaml *.bundle.zip > SHA256SUMS)
+
+      - name: Attest
+        id: attest
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/*.spec.yaml
+            dist/SHA256SUMS
+
+      - run: cp '${{ steps.attest.outputs.bundle-path }}' dist/release.intoto.jsonl
 
       - uses: softprops/action-gh-release@v2
         with:

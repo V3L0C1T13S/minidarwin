@@ -23,6 +23,7 @@ nix build .#libmachO               # dyld's Mach-O reader (stage 5)
 nix build .#libcxxDylib .#libcxxabiDylib
 nix build .#sdkStage4              # sysroot where plain `-lc++` links (RTTI included)
 nix build .#rootfs                 # assembled tree at real paths (/usr/lib/system, etc.)
+nix build .#rootfsRelease          # that tree as a release: tarball, manifest, spec, bundle
 ```
 
 Direct `nix-build` also works: `nix-build -A sdk`, `nix-build -A libSystem` (`default.nix` is usable outside flakes).
@@ -76,8 +77,31 @@ All files are reproducible, and can be verified 1:1 from the build workflow too.
 | `libcxxDylib` / `libcxxabiDylib` | `/usr/lib/libc++.1.dylib` + `libc++abi.dylib` |
 | `sdkStage4` / `toolchainStage4` | The C++-linkable sysroot: stage 3 plus those two dylibs, so `-lc++` alone resolves `___dynamic_cast` and the `__cxxabiv1` type_info vtables. What `nix develop` gives you. |
 | `rootfs` | 13 dylibs assembled at real paths with whole-tree checks (load commands resolve, no undeclared undefined symbols). Nothing runs yet - no `/usr/lib/dyld`. |
+| `rootfsRelease` | `rootfs` packed for distribution: a reproducible `.tar.gz`, a `manifest.yaml` (type, mode and SHA-256 of every path, plus a Merkle tree digest), a `spec.yaml` pinning both, and a `.bundle.zip` of all three. |
 
 `sdkTest` asserts a 2-entry include path (clang builtins + sysroot). `runtimesTest` links C++ against the archives and checks 151 remaining undefs are all C. `libsystemTest` links a C program against `-lSystem` only. `cxxLinkTest` links a C++ program that downcasts, cross-casts through a virtual base, uses `typeid` and throws, against nothing but `-lc++`.
+
+## Releases and verification
+
+Tagged releases publish `rootfsRelease` for both architectures, with a GitHub
+artifact attestation for every file. Every hash in a published spec can be
+reproduced with `nix build .#rootfsRelease` on the tagged commit. Releases are
+meant to be consumed as a verified base system. The formats, the trust chain and
+the verification rules are in [`docs/rootfs-spec.md`](docs/rootfs-spec.md).
+
+```bash
+# Check a download. Standard-library Python only, no Nix needed:
+python3 scripts/mdrootfs.py verify --spec X.spec.yaml --manifest X.manifest.yaml --artifact X.tar.gz
+python3 scripts/mdrootfs.py verify --bundle X.bundle.zip --spec trusted.spec.yaml
+# Diff a live tree (e.g. a prefix) against the manifest -- missing / modified / wrong-type / mode:
+python3 scripts/mdrootfs.py verify --manifest X.manifest.yaml --tree prefix/root --allow-extra
+# Or through the flake:
+nix run .#mdrootfs -- verify --bundle X.bundle.zip
+```
+
+To cut a release, bump `sequence` in [`lib/release.nix`](lib/release.nix) and
+push a `v*` tag. The workflow refuses a sequence that does not exceed the last
+release's.
 
 ## Limitations
 

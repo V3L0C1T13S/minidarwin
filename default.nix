@@ -258,6 +258,13 @@ lib.makeScope pkgs.newScope (self: with self; {
     toolchain = toolchainStage3;
   };
 
+  # What a release publishes: tarball, manifest, spec, bundle (docs/rootfs-spec.md).
+  release = import ./lib/release.nix;
+  mdrootfsScript = ./scripts/mdrootfs.py;
+  mdrootfs = callPackage ./pkgs/release/mdrootfs.nix { };
+  rootfsRelease = callPackage ./pkgs/release/rootfs-release.nix { };
+  releaseTest = callPackage ./pkgs/release/release-test.nix { };
+
   #### stage 5: the dynamic linker ############################################
 
   # dyld's Mach-O reader (static archive, not installed).
