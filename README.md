@@ -130,3 +130,7 @@ scripts/update-sources.sh                  # update all (review diff)
 ```
 
 Keep the set on one OS release of XNU. In particular `libsyscall` must match the `xnu` it came from or syscall numbers will disagree with `sys/syscall.h`.
+
+## License and Scope Notice
+
+MiniDarwin's MIT license applies only to the project's original build expressions, scripts, and documentation. It does not apply to third-party source code, headers, libraries, executables, or other software fetched, built, packaged, or distributed by those expressions and scripts. Those components retain their respective licenses and notices, which govern their use and redistribution. The MIT license for MiniDarwin's build files does not grant rights to those components.
