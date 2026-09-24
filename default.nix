@@ -335,6 +335,11 @@ lib.makeScope pkgs.newScope (self: with self; {
     toolchain = toolchainStage3;
   };
 
+  # Apple's file(1), including its magic rules.
+  file = callPackage ./pkgs/file/file.nix {
+    toolchain = toolchainStage3;
+  };
+
   # Apple's nano editor, installed as /usr/bin/pico with a nano alias.
   nano = callPackage ./pkgs/nano/nano.nix {
     toolchain = toolchainStage3;

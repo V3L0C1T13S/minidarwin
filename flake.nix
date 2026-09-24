@@ -60,6 +60,7 @@
             patchCmds
             miscCmds
             awk
+            file
             nano
             bash
             zsh

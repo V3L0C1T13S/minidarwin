@@ -1,0 +1,25 @@
+# file.xcodeproj's file target (the libmagic sources are compiled into file).
+# Generated with scripts/pbxproj-sources.py; duplicate fsmagic.c entry omitted.
+[
+  "file/src/apprentice.c"
+  "file/src/apptype.c"
+  "file/src/ascmagic.c"
+  "file/src/buffer.c"
+  "file/src/cdf.c"
+  "file/src/cdf_time.c"
+  "file/src/compress.c"
+  "file/src/der.c"
+  "file/src/encoding.c"
+  "file/src/file.c"
+  "file/src/fsmagic.c"
+  "file/src/funcs.c"
+  "file/src/is_csv.c"
+  "file/src/is_json.c"
+  "file/src/is_tar.c"
+  "file/src/magic.c"
+  "file/src/print.c"
+  "file/src/readcdf.c"
+  "file/src/readelf.c"
+  "file/src/readmacho.c"
+  "file/src/softmagic.c"
+]
