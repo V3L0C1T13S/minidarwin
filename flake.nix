@@ -60,6 +60,7 @@
             patchCmds
             miscCmds
             awk
+            nano
             ncursesTools
             rootfs
             rootfsRelease

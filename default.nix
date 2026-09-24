@@ -335,6 +335,11 @@ lib.makeScope pkgs.newScope (self: with self; {
     toolchain = toolchainStage3;
   };
 
+  # Apple's nano editor, installed as /usr/bin/pico with a nano alias.
+  nano = callPackage ./pkgs/nano/nano.nix {
+    toolchain = toolchainStage3;
+  };
+
   #### stage 7: the rootfs ####################################################
 
   # Assembled rootfs (early - later stages add inputs here).
