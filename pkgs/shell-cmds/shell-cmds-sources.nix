@@ -4,8 +4,28 @@
 #
 # One attribute per target. Paths are relative to the shell_cmds source root.
 {
+  basename = [
+    "basename/basename.c"
+  ];
+  chroot = [
+    "chroot/chroot.c"
+  ];
+  date = [
+    "date/date.c"
+    "date/vary.c"
+  ];
+  dirname = [
+    "dirname/dirname.c"
+  ];
   echo = [
     "echo/echo.c"
+  ];
+  env = [
+    "env/env.c"
+    "env/envopts.c"
+  ];
+  expr = [
+    "expr/expr.y"
   ];
   false = [
     "false/false.c"
@@ -20,17 +40,83 @@
     "find/operator.c"
     "find/option.c"
   ];
+  getopt = [
+    "getopt/getopt.c"
+  ];
+  hexdump = [
+    "hexdump/conv.c"
+    "hexdump/display.c"
+    "hexdump/hexdump.c"
+    "hexdump/hexsyntax.c"
+    "hexdump/odsyntax.c"
+    "hexdump/parse.c"
+  ];
   hostname = [
     "hostname/hostname.c"
   ];
   id = [
     "id/id.c"
   ];
+  jot = [
+    "jot/jot.c"
+  ];
+  kill = [
+    "kill/kill.c"
+  ];
+  killall = [
+    "killall/killall.c"
+  ];
+  lastcomm = [
+    "lastcomm/lastcomm.c"
+  ];
+  locate = [
+    "locate/locate/locate.c"
+    "locate/locate/util.c"
+  ];
+  "locate.bigram" = [
+    "locate/bigram/locate.bigram.c"
+  ];
+  "locate.code" = [
+    "locate/code/locate.code.c"
+  ];
+  lockf = [
+    "lockf/lockf.c"
+  ];
+  logname = [
+    "logname/logname.c"
+  ];
+  mktemp = [
+    "mktemp/mktemp.c"
+  ];
+  nice = [
+    "nice/nice.c"
+  ];
+  nohup = [
+    "nohup/nohup.c"
+  ];
+  path_helper = [
+    "path_helper/path_helper.c"
+  ];
+  printenv = [
+    "printenv/printenv.c"
+  ];
+  printf = [
+    "printf/printf.c"
+  ];
   pwd = [
     "pwd/pwd.c"
   ];
   realpath = [
     "realpath/realpath.c"
+  ];
+  renice = [
+    "renice/renice.c"
+  ];
+  script = [
+    "script/script.c"
+  ];
+  seq = [
+    "seq/seq.c"
   ];
   sh = [
     "$(BUILT_PRODUCTS_DIR)/builtins.c"
@@ -64,14 +150,51 @@
     "sh/var.c"
     "test/test.c"
   ];
+  shlock = [
+    "shlock/shlock.c"
+  ];
+  sleep = [
+    "sleep/sleep.c"
+  ];
+  stdbuf = [
+    "stdbuf/stdbuf.c"
+  ];
+  systime = [
+    "systime/systime.c"
+  ];
+  tee = [
+    "tee/tee.c"
+  ];
+  test = [
+    "test/test.c"
+  ];
+  time = [
+    "time/time.c"
+  ];
   true = [
     "true/true.c"
   ];
   uname = [
     "uname/uname.c"
   ];
+  users = [
+    "users/users.cc"
+  ];
+  what = [
+    "what/what.c"
+  ];
+  whereis = [
+    "whereis/whereis.c"
+  ];
+  which = [
+    "which/which.c"
+  ];
   who = [
     "who/who.c"
+  ];
+  xargs = [
+    "xargs/strnsubst.c"
+    "xargs/xargs.c"
   ];
   yes = [
     "yes/yes.c"

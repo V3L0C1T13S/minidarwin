@@ -52,6 +52,15 @@
             shellCmds
             libutil
             fileCmds
+            libmd
+            textCmds
+            advCmds
+            basicCmds
+            systemCmds
+            patchCmds
+            miscCmds
+            awk
+            ncursesTools
             rootfs
             rootfsRelease
             mdrootfs;

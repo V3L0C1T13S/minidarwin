@@ -52,6 +52,16 @@ in
     "sha256-MAfzoyww1UK0o5TJ7XI4A9vi1T09Nz6Yb9iMrS/wX78=";
   libutil = apple "libutil" "libutil-73"
     "sha256-64+1CIRpYBon7skJRKdaXcxucPh9GrhAbUERhL2PLXA=";
+  # libmd.dylib: md5(1) and install(1) digests. Its functions are wrappers
+  # over CommonCrypto's.
+  libmd = apple "libmd" "libmd-7"
+    "sha256-4MLkSWIZusZjKC231V9lTLnkh5l9byGMXYZKkhaSS4c=";
+  # Headers only, for <CommonCrypto/CommonDigest.h> (libmd, md5, install,
+  # sort). Not this train: the last release there is, years older, and
+  # CommonCrypto is closed source since (libcommonCrypto, absent-members.nix).
+  # The digest API it declares has not changed. Nothing is compiled from it.
+  CommonCrypto = apple "CommonCrypto" "CommonCrypto-600035"
+    "sha256-+qAwL6+s7di9cX/qXtapLkjCFoDuZaSYltRJEG4qekM=";
 
   cctools = apple "cctools" "cctools-1035.1.102"
     "sha256-/2yIOHOxmgtwkaE/XOf5jk+iO3B4gnxXq8V/+qb+Wwg=";
@@ -71,6 +81,12 @@ in
     "sha256-hheUl5AkA2OuAH6VsL/q6/qhJb2YCSwi9bC5tTMwEnM=";
   basic_cmds = apple "basic_cmds" "basic_cmds-70"
     "sha256-RQve2GqS9ke9hd8kupRMgoOKalTS229asi5tBGrBmS8=";
+  misc_cmds = apple "misc_cmds" "misc_cmds-45"
+    "sha256-04uBS16nNrg73Fqh4Obev7nQDjTTlY4f5+pEv3i0FIU=";
+  patch_cmds = apple "patch_cmds" "patch_cmds-75"
+    "sha256-XoLEVrvu9pfHPalkBQDH0IfzcX8FLkcEBmW03cq2jQY=";
+  awk = apple "awk" "awk-40"
+    "sha256-QqBivftpeKxcEEwQEx+Fkh8H8JAC8E684H2YHWPzx5k=";
   bash = apple "bash" "bash-144"
     "sha256-NbbE30OAlKS25OeB/kO30Y8UbmaLbuckFMsLoMSsYa8=";
   # libedit.3.dylib (sh's line editing) and the libncurses it links.

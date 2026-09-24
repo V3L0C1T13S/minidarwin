@@ -128,6 +128,8 @@ if [ "$changed" = 1 ]; then
     libedit pkgs/libedit/libedit-sources.nix
   gen_sources libutil libutil.xcodeproj/project.pbxproj \
     util pkgs/libutil/libutil-sources.nix
+  gen_sources libmd libmd.xcodeproj/project.pbxproj \
+    libmd pkgs/libmd/libmd-sources.nix
 
   # Stage 6: *_cmds projects, one attribute per tool target (pkgs/cmds/mk-cmds.nix).
   gen_cmds() { # <attr> <out> <target>...
@@ -142,7 +144,10 @@ if [ "$changed" = 1 ]; then
       echo "# One attribute per target. Paths are relative to the $attr source root."
       echo "{"
       for tool in "$@"; do
-        echo "  $tool = ["
+        case "$tool" in
+          *.*) echo "  \"$tool\" = [" ;; # locate.bigram: one name, not a path
+          *) echo "  $tool = [" ;;
+        esac
         python3 scripts/pbxproj-sources.py \
           "$src/$attr.xcodeproj/project.pbxproj" "$tool" |
           sed 's/^/    "/;s/$/"/'
@@ -153,9 +158,33 @@ if [ "$changed" = 1 ]; then
   }
 
   gen_cmds shell_cmds pkgs/shell-cmds/shell-cmds-sources.nix \
-    echo false find hostname id pwd realpath sh true uname who yes
+    basename chroot date dirname echo env expr false find getopt \
+    hexdump hostname id jot kill killall lastcomm locate locate.bigram \
+    locate.code lockf logname mktemp nice nohup path_helper printenv printf \
+    pwd realpath renice script seq sh shlock sleep stdbuf systime tee test \
+    time true uname users what whereis which who xargs yes
   gen_cmds file_cmds pkgs/file-cmds/file-cmds-sources.nix \
-    chflags chmod chown cp du ln ls mkdir mv stat truncate xattr
+    chflags chmod chown cksum compress cp dd du install ipcrm ln ls mkdir \
+    mkfifo mknod mv pathchk pax rm rmdir stat touch truncate xattr
+  gen_cmds text_cmds pkgs/text-cmds/text-cmds-sources.nix \
+    banner bintrans cat col colrm column comm csplit cut ed expand fmt fold \
+    grep head join lam look md5 nl paste pr rev rs sed sort split tail tr ul \
+    unexpand uniq unvis vis
+  gen_cmds adv_cmds pkgs/adv-cmds/adv-cmds-sources.nix \
+    cap_mkdb finger gencat locale lsvfs ps stty tabs tty whois
+  gen_cmds basic_cmds pkgs/basic-cmds/basic-cmds-sources.nix \
+    mesg write
+  gen_cmds misc_cmds pkgs/misc-cmds/misc-cmds-sources.nix \
+    cal calendar ncal tsort units
+  gen_cmds patch_cmds pkgs/patch-cmds/patch-cmds-sources.nix \
+    cmp diff diff3 diffstat patch sdiff
+  gen_cmds awk pkgs/awk/awk-sources.nix \
+    awk
+  gen_cmds ncurses pkgs/ncurses/ncurses-tools-sources.nix \
+    clear infocmp tic toe tput tset
+  gen_cmds system_cmds pkgs/system-cmds/system-cmds-sources.nix \
+    ac accton dmesg getconf hostinfo mkfile nologin pwd_mkdb sa sync sysctl \
+    vm_stat wait4path zdump zic
 
   echo
   echo "Now re-run the build. Header layout and unifdef flags change between"

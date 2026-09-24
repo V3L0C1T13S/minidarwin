@@ -1,8 +1,9 @@
 # Stage 7: assembled rootfs (closed set of Mach-Os + whole-tree checks).
 # Contains libSystem (+ members), libc++.1.dylib, libc++abi.dylib and stage 6:
-# the shell_cmds tools, the libedit + libncurses that sh links, the terminfo
-# database libncurses reads, and ls with its libutil; no dyld yet so nothing
-# runs.
+# the shell_cmds, file_cmds, text_cmds, adv_cmds, basic_cmds, system_cmds,
+# patch_cmds and misc_cmds tools, awk, and ncurses' own; the libraries they
+# link (libedit, libncurses, libutil, libmd); and the terminfo database
+# libncurses reads. No dyld yet, so nothing runs.
 { lib
 , mkDarwinPackage
 , toolchain
@@ -17,15 +18,25 @@
 , shellCmds
 , libutil
 , fileCmds
+, libmd
+, textCmds
+, advCmds
+, basicCmds
+, systemCmds
+, patchCmds
+, miscCmds
+, awk
+, ncursesTools
 }:
 
 let
-  members = [ libSystem libsystemTree2 libcxxDylib libcxxabiDylib ncurses terminfo libedit shellCmds libutil fileCmds ];
+  cmds = [ shellCmds fileCmds textCmds advCmds basicCmds systemCmds patchCmds miscCmds awk ncursesTools ];
+  members = [ libSystem libsystemTree2 libcxxDylib libcxxabiDylib ncurses terminfo libedit libutil libmd ] ++ cmds;
 
   # Union of passthru.allowUndefined from all members.
   declared =
     lib.foldl' (acc: p: acc // (p.allowUndefined or { })) { }
-      (lib.attrValues libsystemPass2 ++ [ libcxxDylib libcxxabiDylib ncurses libedit shellCmds libutil fileCmds ]);
+      (lib.attrValues libsystemPass2 ++ [ libcxxDylib libcxxabiDylib ncurses libedit libutil libmd ] ++ cmds);
 
   # Runtime-provided (dyld defines in loaded process, not in a library).
   runtimeProvided = [ "dyld_stub_binder" ];
@@ -61,9 +72,13 @@ mkDarwinPackage {
     find $out -type f -perm -u+x -exec chmod 755 {} +
     find $out -type f ! -perm -u+x -exec chmod 644 {} +
 
-    # Dylibs plus executables (everything under a bin/ or sbin/).
-    find $out -type f \( -name '*.dylib' -o -path '*/bin/*' -o -path '*/sbin/*' \) |
-      sed "s,^$out,," | sort > $TMPDIR/machos.txt
+    # Every Mach-O, by its magic (64-bit or fat): the tree also has scripts
+    # under bin/ (alias, shar, ...), and executables under libexec/.
+    find $out -type f -size +3c | sort | while IFS= read -r f; do
+      case $(od -An -tx1 -N4 "$f" | tr -d ' \n') in
+        cffaedfe|cafebabe) echo "''${f#$out}" ;;
+      esac
+    done > $TMPDIR/machos.txt
     ndylibs=$(grep -c '\.dylib$' $TMPDIR/machos.txt || true)
     md_log "rootfs: $ndylibs dylibs, $(( $(wc -l < $TMPDIR/machos.txt) - ndylibs )) executables"
 

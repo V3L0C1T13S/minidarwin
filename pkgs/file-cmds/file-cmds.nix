@@ -1,11 +1,22 @@
 # Stage 6: file_cmds targets (see ../cmds/mk-cmds.nix).
 # Not reproduced: apple-generic versioning's generated <tool>_vers.c, as for
 # shell_cmds; and the targets' Copy Test Files phases (/AppleInternal/Tests).
-{ mkCmds
+# The aggregates that only hardlink a tool under another name (chgrp, link,
+# readlink, sum, uncompress, unlink) are its `links`, as symlinks; shar, a
+# script, is extraInstall.
+#
+# Not built: df (written against libxo, which Apple has not released), ipcs
+# (Kernel.framework's private headers, for the kernel's struct layouts), gzip
+# (zlib, libbz2 and liblzma), mtree (CoreFoundation); the test helpers
+# gettime_ns, sparse and touch_epoch.
+{ lib
+, mkCmds
 , sources
 , toolchain
 , libutil
 , ncurses
+, libmd
+, commonCryptoHeaders
 }:
 
 let
@@ -30,12 +41,30 @@ let
     };
     chown = {
       installDir = "/usr/sbin";
-      man = { "chown/chown.8" = "/usr/share/man/man8/chown.8"; };
+      man = {
+        "chown/chown.8" = "/usr/share/man/man8/chown.8";
+        "chown/chgrp.1" = "/usr/share/man/man1/chgrp.1"; # the chgrp aggregate's
+      };
+      links."/usr/bin/chgrp" = "/usr/sbin/chown";
       # Owner and group given by name.
       allowUndefined = {
         "_getgrnam" = "system_info";
         "_getpwnam" = "system_info";
       };
+    };
+    cksum = {
+      man = {
+        "cksum/cksum.1" = "/usr/share/man/man1/cksum.1";
+        "cksum/sum.1" = "/usr/share/man/man1/sum.1";
+      };
+      links."/usr/bin/sum" = "/usr/bin/cksum";
+    };
+    compress = {
+      man = {
+        "compress/compress.1" = "/usr/share/man/man1/compress.1";
+        "compress/uncompress.1" = "/usr/share/man/man1/uncompress.1";
+      };
+      links."/usr/bin/uncompress" = "/usr/bin/compress";
     };
     cp = {
       installDir = "/bin";
@@ -50,13 +79,35 @@ let
         "_fcopyfile" = "copyfile";
       };
     };
+    dd = {
+      installDir = "/bin";
+      libraries = [{ pkg = libutil; l = "util"; }]; # frameworks phase
+    };
     du = { libraries = [{ pkg = libutil; l = "util"; }]; };
+    install = {
+      # Frameworks phase: libmd.tbd, for -M's digests.
+      libraries = [{ pkg = libmd; l = "md"; }];
+      cflags = [ "-I${commonCryptoHeaders}/usr/include" ]; # libmd's headers include it
+      allowUndefined = lib.genAttrs
+        (lib.concatMap (d: [ "_CC_${d}_Init" "_CC_${d}_Update" ]) [ "SHA1" "SHA256" "SHA512" ])
+        (_: "commonCrypto") # libmd's #defines, as for md5 (text_cmds)
+      // {
+        "_environ" = "dyld"; # -s runs strip(1) with it; see shell_cmds' find
+        "_fcopyfile" = "copyfile"; # the copied file's metadata, as for cp
+        # -o, -g: owner and group by name.
+        "_getgrnam" = "system_info";
+        "_getpwnam" = "system_info";
+      };
+    };
+    ipcrm = { };
     ln = {
       installDir = "/bin";
       man = {
         "ln/ln.1" = "/usr/share/man/man1/ln.1";
+        "ln/link.1" = "/usr/share/man/man1/link.1"; # the link aggregate's
         "ln/symlink.7" = "/usr/share/man/man7/symlink.7";
       };
+      links."/bin/link" = "/bin/ln";
     };
     ls = {
       installDir = "/bin";
@@ -76,6 +127,13 @@ let
       };
     };
     mkdir = { installDir = "/bin"; };
+    mkfifo = { };
+    mknod = {
+      installDir = "/sbin";
+      cflags = [ "-DHAVE_NBTOOL_CONFIG_H=0" ]; # OTHER_CFLAGS
+      man = { "mknod/mknod.8" = "/usr/share/man/man8/mknod.8"; };
+      allowUndefined."_getgrnam" = "system_info"; # -F's owner:group by name
+    };
     mv = {
       installDir = "/bin";
       allowUndefined = {
@@ -88,14 +146,53 @@ let
         "_user_from_uid" = "system_info";
       };
     };
+    pathchk = { };
+    pax = {
+      installDir = "/bin";
+      allowUndefined = {
+        # Extracted files' xattrs and ACLs (Apple's ._ AppleDouble members).
+        "_copyfile" = "copyfile";
+        "_fcopyfile" = "copyfile";
+        # Archive members' owner and group names, both ways (cache.c).
+        "_endgrent" = "system_info";
+        "_endpwent" = "system_info";
+        "_getgrgid" = "system_info";
+        "_getgrnam" = "system_info";
+        "_getpwnam" = "system_info";
+        "_getpwuid" = "system_info";
+        "_setgroupent" = "system_info";
+        "_setpassent" = "system_info";
+      };
+    };
+    rm = {
+      installDir = "/bin";
+      man = {
+        "rm/rm.1" = "/usr/share/man/man1/rm.1";
+        "rm/unlink.1" = "/usr/share/man/man1/unlink.1"; # the unlink aggregate's
+      };
+      links."/bin/unlink" = "/bin/rm";
+      allowUndefined = {
+        "_removefile" = "removefile"; # -P overwrites, then unlinks
+        # The prompt before removing a file it cannot write.
+        "_group_from_gid" = "system_info";
+        "_user_from_uid" = "system_info";
+      };
+    };
+    rmdir = { installDir = "/bin"; };
     stat = {
       defines = defines ++ [ "HAVE_CONFIG_H=0" ];
+      man = {
+        "stat/stat.1" = "/usr/share/man/man1/stat.1";
+        "stat/readlink.1" = "/usr/share/man/man1/readlink.1"; # the readlink aggregate's
+      };
+      links."/usr/bin/readlink" = "/usr/bin/stat";
       # %Su, %Sg: owner and group names.
       allowUndefined = {
         "_group_from_gid" = "system_info";
         "_user_from_uid" = "system_info";
       };
     };
+    touch = { };
     truncate = {
       cflags = modernCflags;
       libraries = [{ pkg = libutil; l = "util"; }]; # OTHER_LDFLAGS = -lutil
@@ -128,4 +225,10 @@ mkCmds {
   ];
   inherit defines;
   ldflags = [ "-Wl,-dead_strip" ]; # DEAD_CODE_STRIPPING
+
+  # The shar aggregate.
+  extraInstall = ''
+    install -Dm755 shar/shar.sh $out/usr/bin/shar
+    install -Dm644 shar/shar.1 $out/usr/share/man/man1/shar.1
+  '';
 }

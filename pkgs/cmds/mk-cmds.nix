@@ -14,8 +14,16 @@
 #   libraries   built dylibs this target links, each with passthru.installName
 #               and a -l name, and passthru.headers if it has any
 #   cflags      other compiler settings that change the result or can fail it
+#               (C and C++ alike; the project's C standard is C-only, as
+#               GCC_C_LANGUAGE_STANDARD is)
 #   builtProducts  a derivation copied to BUILT_PRODUCTS_DIR first
+#   notCompiled { <listed source> = <why>; } -- a file the generated list
+#               names that Apple's build does not compile into the tool
 #   man         { <file in the tarball> = <installed path>; }
+#   links       { <installed path> = <installed path it names>; } -- what the
+#               project hardlinks (id -> whoami, test -> [), as relative
+#               symlinks: the rootfs format has no hardlinks, and a tool that
+#               looks at getprogname() sees the link's name either way
 #   allowUndefined  imports nothing in the tree defines yet, with the reason
 { lib
 , mkDarwinPackage
@@ -30,6 +38,9 @@
 , defines
 , ldflags
 , nativeBuildInputs ? [ ]
+, extraInstall ? "" # targets with nothing to compile (a script installed as-is)
+, postPatch ? ""
+, version ? lib.removePrefix "${pname}-" src.rev # when pname is not the project's
 }:
 
 let
@@ -54,12 +65,35 @@ let
   buildTool = name: t:
     let
       holes = lib.attrNames (t.allowUndefined or { });
-      srcs = sourceLists.${name};
+      listed = sourceLists.${name};
+      notCompiled = t.notCompiled or { };
+      srcs =
+        assert lib.assertMsg (lib.all (f: lib.elem f listed) (lib.attrNames notCompiled))
+          "${pname}: ${name}: notCompiled names a file its source list does not";
+        lib.filter (f: !(lib.hasAttr f notCompiled)) listed;
       yaccs = lib.filter (lib.hasSuffix ".y") srcs;
       libs = t.libraries or [ ];
-      expectedDeps = lib.sort (a: b: a < b)
-        ([ "/usr/lib/libSystem.B.dylib" ] ++ map (l: l.pkg.installName) libs);
       needsBuilt = lib.any (lib.hasPrefix builtPrefix) srcs;
+      # A target with C++ sources links with the C++ driver, so it also loads
+      # libc++ -- the package's toolchain must be stage 4 for that.
+      isCxx = f: lib.any (e: lib.hasSuffix e f) [ ".cc" ".cpp" ".cxx" ];
+      cxxSrcs = lib.filter isCxx srcs;
+      cSrcs = lib.filter (f: !isCxx f) srcs;
+      # -no_implicit_dylibs: our libc++.1.dylib reaches libc++abi through
+      # LC_REEXPORT_DYLIB, and lld would add a load command for any re-exported
+      # dylib directly in /usr/lib that a symbol came from. Apple's C++ tools
+      # load libc++.1.dylib alone; this binds the ABI symbols through it too.
+      linker = if cxxSrcs == [ ] then "$CC" else "$CXX -Wl,-no_implicit_dylibs";
+      expectedDeps = lib.sort (a: b: a < b)
+        ([ "/usr/lib/libSystem.B.dylib" ]
+          ++ lib.optional (cxxSrcs != [ ]) "/usr/lib/libc++.1.dylib"
+          ++ map (l: l.pkg.installName) libs);
+      compileFlags = lang: ''
+        ${lib.escapeShellArgs (if lang == "c" then cflags else lib.filter (f: !lib.hasPrefix "-std=" f) cflags)} \
+        ${lib.escapeShellArgs (map (d: "-D${d}") (t.defines or defines))} \
+        ${lib.concatMapStringsSep " " (i: "-iquote $PWD/${i}") (t.includes or [ ])} \
+        ${lib.concatMapStringsSep " " (l: "-I${l.pkg.headers}/usr/include") (lib.filter (l: l.pkg ? headers) libs)} \
+        ${lib.escapeShellArgs (t.cflags or [ ])}'';
     in
     assert lib.assertMsg (needsBuilt -> t ? builtProducts)
       "${pname}: ${name} compiles BUILT_PRODUCTS_DIR files but names no builtProducts";
@@ -73,16 +107,18 @@ let
         mkdir -p derived/${name}
         bison -y -o ${compiledPath name y} ${y}
       '') yaccs}
-      md_compile $PWD/o/${name} "$CC" ${lib.escapeShellArgs cflags} \
-        ${lib.escapeShellArgs (map (d: "-D${d}") (t.defines or defines))} \
-        ${lib.concatMapStringsSep " " (i: "-iquote $PWD/${i}") (t.includes or [ ])} \
-        ${lib.concatMapStringsSep " " (l: "-I${l.pkg.headers}/usr/include") (lib.filter (l: l.pkg ? headers) libs)} \
-        ${lib.escapeShellArgs (t.cflags or [ ])} \
-        -- ${lib.concatMapStringsSep " " (f: "$PWD/${compiledPath name f}") srcs}
+      ${lib.optionalString (cSrcs != [ ]) ''
+      md_compile $PWD/o/${name} "$CC" ${compileFlags "c"} \
+        -- ${lib.concatMapStringsSep " " (f: "$PWD/${compiledPath name f}") cSrcs}
+      ''}
+      ${lib.optionalString (cxxSrcs != [ ]) ''
+      md_compile $PWD/o/${name} "$CXX" ${compileFlags "c++"} \
+        -- ${lib.concatMapStringsSep " " (f: "$PWD/${compiledPath name f}") cxxSrcs}
+      ''}
       objs=()
       while IFS= read -r o; do objs+=( "$o" ); done < <(find $PWD/o/${name} -name '*.o' | sort)
       # -undefined error, except for the symbols declared absent above.
-      "$CC" ${lib.escapeShellArgs ldflags} \
+      ${linker} ${lib.escapeShellArgs ldflags} \
         ${lib.concatMapStringsSep " " (l: "-L${l.pkg}/usr/lib -l${l.l}") libs} \
         ${lib.concatMapStringsSep " " (s: lib.escapeShellArg "-Wl,-U,${s}") holes} \
         -o $PWD/bin/${name} "''${objs[@]}"
@@ -112,11 +148,17 @@ let
       (src: dst: "install -Dm644 ${src} $out${dst}")
       (t.man or { "${name}/${name}.1" = "/usr/share/man/man1/${product name t}.1"; }))}
   '';
+
+  # Relative, so the link resolves inside the rootfs wherever it is unpacked.
+  mkLink = link: target: ''
+    [ -e $out${target} ] || { echo "${pname}: ${link} -> ${target}, which is not installed" >&2; exit 1; }
+    mkdir -p $out${dirOf link}
+    ln -s "$(realpath -m --relative-to=$out${dirOf link} $out${target})" $out${link}
+  '';
 in
 
 mkDarwinPackage {
-  inherit pname src toolchain nativeBuildInputs;
-  version = lib.removePrefix "${pname}-" src.rev;
+  inherit pname version src toolchain nativeBuildInputs postPatch;
 
   # Unioned by rootfs.nix into the tree's declared holes.
   passthru.allowUndefined =
@@ -138,6 +180,9 @@ mkDarwinPackage {
     runHook preInstall
 
     ${lib.concatStringsSep "\n" (lib.mapAttrsToList installTool checkedTools)}
+    ${extraInstall}
+    ${lib.concatStringsSep "\n" (lib.concatLists (lib.mapAttrsToList
+      (_: t: lib.mapAttrsToList mkLink (t.links or { })) checkedTools))}
 
     runHook postInstall
   '';

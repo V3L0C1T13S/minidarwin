@@ -14,12 +14,38 @@
   chown = [
     "chown/chown.c"
   ];
+  cksum = [
+    "cksum/cksum.c"
+    "cksum/crc.c"
+    "cksum/crc32.c"
+    "cksum/print.c"
+    "cksum/sum1.c"
+    "cksum/sum2.c"
+  ];
+  compress = [
+    "compress/compress.c"
+    "compress/zopen.c"
+  ];
   cp = [
     "cp/cp.c"
     "cp/utils.c"
   ];
+  dd = [
+    "dd/args.c"
+    "dd/conv.c"
+    "dd/conv_tab.c"
+    "dd/dd.c"
+    "dd/misc.c"
+    "dd/position.c"
+  ];
   du = [
     "du/du.c"
+  ];
+  install = [
+    "install/xinstall.c"
+  ];
+  ipcrm = [
+    "ipcrm/ipcrm.c"
   ];
   ln = [
     "ln/ln.c"
@@ -33,11 +59,49 @@
   mkdir = [
     "mkdir/mkdir.c"
   ];
+  mkfifo = [
+    "mkfifo/mkfifo.c"
+  ];
+  mknod = [
+    "mknod/mknod.c"
+    "mknod/pack_dev.c"
+  ];
   mv = [
     "mv/mv.c"
   ];
+  pathchk = [
+    "pathchk/pathchk.c"
+  ];
+  pax = [
+    "pax/ar_io.c"
+    "pax/ar_subs.c"
+    "pax/buf_subs.c"
+    "pax/cache.c"
+    "pax/cpio.c"
+    "pax/file_subs.c"
+    "pax/ftree.c"
+    "pax/gen_subs.c"
+    "pax/getoldopt.c"
+    "pax/options.c"
+    "pax/pat_rep.c"
+    "pax/pax.c"
+    "pax/pax_format.c"
+    "pax/sel_subs.c"
+    "pax/tables.c"
+    "pax/tar.c"
+    "pax/tty_subs.c"
+  ];
+  rm = [
+    "rm/rm.c"
+  ];
+  rmdir = [
+    "rmdir/rmdir.c"
+  ];
   stat = [
     "stat/stat.c"
+  ];
+  touch = [
+    "touch/touch.c"
   ];
   truncate = [
     "truncate/truncate.c"

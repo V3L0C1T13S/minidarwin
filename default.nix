@@ -264,6 +264,10 @@ lib.makeScope pkgs.newScope (self: with self; {
   ncursesGenerated = callPackage ./pkgs/ncurses/ncurses-generated.nix { };
   ncursesTic = callPackage ./pkgs/ncurses/tic.nix { };
   terminfo = callPackage ./pkgs/ncurses/terminfo.nix { };
+  # clear, tput, tset, ... (ncurses.xcodeproj's executables).
+  ncursesTools = callPackage ./pkgs/ncurses/ncurses-tools.nix {
+    toolchain = toolchainStage3;
+  };
   ncurses = callPackage ./pkgs/ncurses/ncurses.nix {
     toolchain = toolchainStage3;
   };
@@ -276,16 +280,58 @@ lib.makeScope pkgs.newScope (self: with self; {
     toolchain = toolchainStage3;
   };
 
+  # libmd.dylib: what md5 and install link for their digests; and the
+  # CommonCrypto header its own headers (and sort) include.
+  commonCryptoHeaders = callPackage ./pkgs/libmd/commoncrypto-headers.nix { };
+  libmd = callPackage ./pkgs/libmd/libmd.nix {
+    toolchain = toolchainStage3;
+  };
+
   # The *_cmds projects' tools, built per target (pkgs/cmds/mk-cmds.nix).
   mkCmds = callPackage ./pkgs/cmds/mk-cmds.nix { };
 
   # The shell_cmds tools -- the first executables, C-only against libSystem.
   shellCmds = callPackage ./pkgs/shell-cmds/shell-cmds.nix {
+    toolchain = toolchainStage4; # users is C++
+  };
+
+  # The file_cmds tools: ls, cp, rm, touch, ...
+  fileCmds = callPackage ./pkgs/file-cmds/file-cmds.nix {
     toolchain = toolchainStage3;
   };
 
-  # The file_cmds tools: ls.
-  fileCmds = callPackage ./pkgs/file-cmds/file-cmds.nix {
+  # The text_cmds tools: cat, grep, sed, sort, ...
+  textCmds = callPackage ./pkgs/text-cmds/text-cmds.nix {
+    toolchain = toolchainStage3;
+  };
+
+  # The adv_cmds tools: ps, stty, tty, locale, ...
+  advCmds = callPackage ./pkgs/adv-cmds/adv-cmds.nix {
+    toolchain = toolchainStage4; # locale is C++
+  };
+
+  # The basic_cmds tools: mesg, write.
+  basicCmds = callPackage ./pkgs/basic-cmds/basic-cmds.nix {
+    toolchain = toolchainStage3;
+  };
+
+  # The system_cmds tools a plain userland has: sync, sysctl, getconf, ...
+  systemCmds = callPackage ./pkgs/system-cmds/system-cmds.nix {
+    toolchain = toolchainStage3;
+  };
+
+  # cmp, diff, diff3, diffstat, patch, sdiff.
+  patchCmds = callPackage ./pkgs/patch-cmds/patch-cmds.nix {
+    toolchain = toolchainStage3;
+  };
+
+  # cal/ncal, calendar, tsort, units.
+  miscCmds = callPackage ./pkgs/misc-cmds/misc-cmds.nix {
+    toolchain = toolchainStage3;
+  };
+
+  # /usr/bin/awk.
+  awk = callPackage ./pkgs/awk/awk.nix {
     toolchain = toolchainStage3;
   };
 
