@@ -92,6 +92,10 @@ in
     "sha256-mWvLo0OrjkDsAz9MRa3STnW1wWU/xKvg2UFEic2DDks=";
   bash = apple "bash" "bash-144"
     "sha256-NbbE30OAlKS25OeB/kO30Y8UbmaLbuckFMsLoMSsYa8=";
+  ksh = apple "ksh" "ksh-42"
+    "sha256-pxWn1tQQQbK1opytoVwBVQDIQ2SaLO9a0p/AzBvI/Tc=";
+  zsh = apple "zsh" "zsh-118"
+    "sha256-4AR+rbsO9pJzFxnzM6xenZp94TboXpFNJVCzppUmsFQ=";
   # libedit.3.dylib (sh's line editing) and the libncurses it links.
   libedit = apple "libedit" "libedit-65"
     "sha256-p1YROiK6YPLLe8klHhcikjVeVWuEW9plghsKJHXj+EM=";

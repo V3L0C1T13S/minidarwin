@@ -1,7 +1,7 @@
 # Stage 7: assembled rootfs (closed set of Mach-Os + whole-tree checks).
 # Contains libSystem (+ members), libc++.1.dylib, libc++abi.dylib and stage 6:
 # the shell_cmds, file_cmds, text_cmds, adv_cmds, basic_cmds, system_cmds,
-# patch_cmds and misc_cmds tools, awk, nano/pico, and ncurses' own; the libraries they
+# patch_cmds and misc_cmds tools, awk, nano/pico, bash, zsh, and ncurses' own; the libraries they
 # link (libedit, libncurses, libutil, libmd); and the terminfo database
 # libncurses reads. No dyld yet, so nothing runs.
 { lib
@@ -27,11 +27,13 @@
 , miscCmds
 , awk
 , nano
+, bash
+, zsh
 , ncursesTools
 }:
 
 let
-  cmds = [ shellCmds fileCmds textCmds advCmds basicCmds systemCmds patchCmds miscCmds awk nano ncursesTools ];
+  cmds = [ shellCmds fileCmds textCmds advCmds basicCmds systemCmds patchCmds miscCmds awk nano bash zsh ncursesTools ];
   members = [ libSystem libsystemTree2 libcxxDylib libcxxabiDylib ncurses terminfo libedit libutil libmd ] ++ cmds;
 
   # Union of passthru.allowUndefined from all members.

@@ -61,6 +61,8 @@
             miscCmds
             awk
             nano
+            bash
+            zsh
             ncursesTools
             rootfs
             rootfsRelease

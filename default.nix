@@ -340,6 +340,13 @@ lib.makeScope pkgs.newScope (self: with self; {
     toolchain = toolchainStage3;
   };
 
+  bash = callPackage ./pkgs/bash/bash.nix {
+    toolchain = toolchainStage3;
+  };
+  zsh = callPackage ./pkgs/zsh/zsh.nix {
+    toolchain = toolchainStage3;
+  };
+
   #### stage 7: the rootfs ####################################################
 
   # Assembled rootfs (early - later stages add inputs here).

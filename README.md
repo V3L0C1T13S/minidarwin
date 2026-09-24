@@ -30,6 +30,7 @@ nix build .#libmd .#textCmds      # libmd.dylib; cat, grep, sed, sort, head, tai
 nix build .#advCmds .#basicCmds    # ps, stty, tty, locale, ...; mesg, write (stage 6)
 nix build .#systemCmds            # sync, sysctl, getconf, dmesg, zic, ... (stage 6)
 nix build .#patchCmds .#miscCmds .#awk  # diff, cmp, patch; cal, tsort, units; awk (stage 6)
+nix build .#bash .#zsh           # Apple shells at /bin/bash, /bin/sh and /bin/zsh
 nix build .#ncursesTools          # clear, tput, tset/reset, infocmp, tic, toe (stage 6)
 nix build .#rootfs                 # assembled tree at real paths (/usr/lib/system, etc.)
 nix build .#rootfsRelease          # that tree as a release: tarball, manifest, spec, bundle
@@ -93,8 +94,9 @@ All files are reproducible, and can be verified 1:1 from the build workflow too.
 | `advCmds` / `basicCmds` | Stage 6: `ps`, `stty`, `tty`, `locale` (C++), `tabs`, `finger`, `whois`, `gencat`, `lsvfs`, `cap_mkdb`; `mesg`, `write`. `ps` and `write` are installed without their set-id bits, which the rootfs format cannot express. |
 | `systemCmds` | Stage 6: the `system_cmds` tools a plain userland has: `sync`, `sysctl`, `getconf`, `dmesg`, `hostinfo`, `vm_stat`, `mkfile`, `nologin`, `wait4path`, `zdump`, `zic`, `ac`, `accton`, `sa`, `pwd_mkdb`. |
 | `patchCmds` / `miscCmds` / `awk` | Stage 6: `cmp`, `diff`, `diff3`, `diffstat`, `patch`, `sdiff`; `cal`, `ncal`, `calendar`, `tsort`, `units`; the one true `awk`. |
+| `bash` / `zsh` | Apple's Bash 3.2 at `/bin/bash` (also `/bin/sh`) and Zsh 5.9 at `/bin/zsh`, with their man pages and startup files. Zsh's modules are linked into its executable for the minimal rootfs. |
 | `ncursesTools` | Stage 6: ncurses' own executables -- `clear`, `tput`, `tset` (+ `reset`), `infocmp`, `tic` (+ `captoinfo`, `infotocap`), `toe` -- linked against libncurses. |
-| `rootfs` | 17 dylibs and 153 executables (210 command names, with the symlinked aliases and scripts) assembled at real paths with whole-tree checks (load commands resolve, no undeclared undefined symbols). Nothing runs yet - no `/usr/lib/dyld`. |
+| `rootfs` | The assembled tree at real paths with whole-tree checks (load commands resolve, no undeclared undefined symbols). Nothing runs yet - no `/usr/lib/dyld`. |
 | `rootfsRelease` | `rootfs` packed for distribution: a reproducible `.tar.gz`, a `manifest.yaml` (type, mode and SHA-256 of every path, plus a Merkle tree digest), a `spec.yaml` pinning both, and a `.bundle.zip` of all three. |
 
 `sdkTest` asserts the include path is exactly clang's builtins, the sysroot's `usr/include` and its `System/Library/Frameworks`, that strict-POSIX code compiles against `usr/include`, and that `System.framework/PrivateHeaders` (and only it) gives the libsystem members xnu's private declarations. `runtimesTest` links C++ against the archives and checks 151 remaining undefs are all C. `libsystemTest` links a C program against `-lSystem` only. `cxxLinkTest` links a C++ program that downcasts, cross-casts through a virtual base, uses `typeid` and throws, against nothing but `-lc++`.
@@ -129,7 +131,7 @@ Not every `Libsystem/requiredlibs` entry is buildable from released source. Seve
 
 Each member's `allowUndefined` lists exactly which symbols it expects from absent libs - no blanket `dynamic_lookup`. `rootfs` checks that every undefined import is declared and every declaration is still needed.
 
-No `/usr/lib/dyld` yet (`libmach_o.a` builds; dyld link not started). Userland is the `shell_cmds`, `file_cmds`, `text_cmds`, `adv_cmds`, `basic_cmds`, `patch_cmds` and `misc_cmds` tools, the basic `system_cmds` ones, `awk`, and ncurses' tools, with libedit, libncurses, libutil, libmd and the terminfo database. No `bash`, so no `/bin/sh`; no `vi`, `less`/`more`, `bc` or `file`, which are projects of their own. `wc`, `df`, `last`, `w`/`uptime` and `apply` are written against libxo or libsbuf, which Apple has not released. Imports from absent libraries are declared per tool, like the libsystem members' (`system_info` for user and group names, `system_m` for `awk`'s and `calendar`'s math, ...). No `launchd` - last open source was 2013 and depends on unreleased `libxpc`.
+No `/usr/lib/dyld` yet (`libmach_o.a` builds; dyld link not started). Userland includes `bash`, `zsh`, the `shell_cmds`, `file_cmds`, `text_cmds`, `adv_cmds`, `basic_cmds`, `patch_cmds` and `misc_cmds` tools, the basic `system_cmds` ones, `awk`, and ncurses' tools, with libedit, libncurses, libutil, libmd and the terminfo database. There is no `vi`, `less`/`more`, `bc` or `file`, which are projects of their own. `wc`, `df`, `last`, `w`/`uptime` and `apply` are written against libxo or libsbuf, which Apple has not released. Imports from absent libraries are declared per tool, like the libsystem members' (`system_info` for user and group names, `system_m` for `awk`'s and `calendar`'s math, ...). No `launchd` - last open source was 2013 and depends on unreleased `libxpc`.
 
 ## Updating sources
 
