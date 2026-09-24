@@ -182,129 +182,145 @@ let
     "-Wno-nullability-completeness"
     "-Wno-error=deprecated"
   ];
+
+  version = lib.removePrefix "Libc-" sources.Libc.rev;
+
+  # Independent of libsystemStage1, so both passes share this one derivation.
+  objects = mkDarwinPackage {
+    pname = "libsystem_c-objects";
+    inherit version toolchain;
+
+    src = sources.Libc;
+    nativeBuildInputs = [ perl ]; # patch_headers_variants.pl
+
+    buildPhase = ''
+      runHook preBuild
+
+      export MD_SRCROOT=$PWD
+      obj=$PWD/o
+      mkdir -p $obj
+
+      # os_log_pack is libsystem_trace's (unreleased os/log_private.h); _os_crash_fmt dlopens it and gives up if absent.
+      # Drop the entry point rather than invent the struct (ABI risk). Also dropped from SDK's os/assumes.h.
+      # printf builds match text (replacement at column 0 would dedent Nix string).
+      packImplOpen=$(printf '__attribute__((always_inline))\nstatic inline bool\n_os_crash_fmt_impl(')
+      packImplClose=$(printf 'pack, pack_size, composed, 0);\n}')
+      packEntry=$(printf 'void _os_crash_fmt(os_log_pack_t pack, size_t pack_size)\n{\n\t_os_crash_fmt_impl(pack, pack_size);\n}')
+
+      # arc4random.c/vfprintf.c enable libtrace crash path via os_log_send_and_compose (unreleased, libsystem_trace).
+      # Their #else already falls back to plain string; guarded by !TARGET_OS_DRIVERKIT (off where libtrace absent).
+      libtraceOptIn=$(printf '#if !TARGET_OS_DRIVERKIT\n#define OS_CRASH_ENABLE_EXPERIMENTAL_LIBTRACE 1\n#endif')
+      for f in gen/FreeBSD/arc4random.c stdio/FreeBSD/vfprintf.c; do
+        substituteInPlace $f --replace-fail "$libtraceOptIn" \
+          '/* minidarwin: os_log_send_and_compose is libsystem_trace'"'"'s. */'
+      done
+
+      substituteInPlace os/assumes.c \
+        --replace-fail "$packImplOpen" \
+          "$(printf '#if 0 /* minidarwin: os_log_pack is libsystem_trace'"'"'s. */\n%s' "$packImplOpen")" \
+        --replace-fail "$packImplClose" \
+          "$(printf '%s\n#endif' "$packImplClose")" \
+        --replace-fail "$packEntry" \
+          '/* minidarwin: _os_crash_fmt dropped -- see above. */'
+
+      # Patch Headers: rewrites __DARWIN_ALIAS_C -> LIBC_ALIAS_C (keyed on VARIANT_*) so variant targets get distinct symbols.
+      # Runs patch_headers_variants.pl over SDK headers; Libc's own sys/cdefs.h defines LIBC_ALIAS_C. No-op on headers without aliases.
+      # Its input is SDK_SYSTEM_FRAMEWORK_HEADERS: System.framework's headers.
+      # Ours holds only the ones that differ from usr/include, so the input is
+      # usr/include with those laid over it -- what a search of the framework,
+      # then usr/include, finds. Named include/ so the output is too.
+      derived=$PWD/derived
+      sdkview=$PWD/sdkview/include
+      mkdir -p $sdkview
+      cp -R "$MINIDARWIN_SYSROOT/usr/include/." $sdkview/
+      chmod -R u+w $sdkview
+      cp -R "$MINIDARWIN_SYSROOT${systemFrameworkHeaders}/." $sdkview/
+      perl xcodescripts/patch_headers_variants.pl \
+        "$sdkview" "$derived/System.framework/Versions/B"
+      patched=$derived/System.framework/Versions/B/include
+      [ -e "$patched/sys/fcntl.h" ] || { echo "Patch Headers produced nothing" >&2; exit 1; }
+      grep -q 'LIBC_ALIAS_CREAT' "$patched/sys/fcntl.h" ||
+        { echo "Patch Headers did not rewrite the __DARWIN_ALIAS declarations" >&2; exit 1; }
+
+      # Libc's include/ ahead of patched tree (its sys/cdefs.h defines LIBC_ALIAS_C via #include_next).
+      incflags=( -I$PWD -I$PWD/include -I$PWD/gen -I$PWD/locale
+                 -I$PWD/locale/FreeBSD -I$PWD/stdtime/FreeBSD -I$PWD/darwin
+                 -isystem "$patched" )
+
+      targetFlags=()
+
+      # One compile invocation per COMPILER_FLAGS group; paths relative to $PWD (not escaped).
+      compile() { # <target> <per-file flags> -- <relative source>...
+        local target="$1" fileFlags="$2"; shift 2
+        [ "$1" = "--" ] && shift
+        fileFlags=''${fileFlags//'$(FreeBSD_CFLAGS)'/-include $MD_SRCROOT/fbsdcompat/_fbsd_compat_.h}
+        fileFlags=''${fileFlags//'$(SRCROOT)'/$MD_SRCROOT}
+        case "$fileFlags" in
+          *'$('*) echo "libsystem_c: unexpanded variable in COMPILER_FLAGS: $fileFlags" >&2; exit 1 ;;
+        esac
+        local f srcs=()
+        for f in "$@"; do srcs+=( "$MD_SRCROOT/$f" ); done
+        md_log "libsystem_c/$target: ''${#srcs[@]} objects''${fileFlags:+ [$fileFlags]}"
+        md_compile $obj/$target "$CC" ${lib.escapeShellArgs commonCFlags} \
+          "''${targetFlags[@]}" $fileFlags "''${incflags[@]}" -- "''${srcs[@]}"
+      }
+
+      ${compileGroups "Base" (dropExcluded sourceLists.Base)}
+
+      # FreeBSD_CFLAGS + FreeBSD_SEARCH_PATHS.
+      fbsdFlags=( -include $PWD/fbsdcompat/_fbsd_compat_.h
+                  -I$PWD/fbsdcompat -I$PWD/gdtoa -I$PWD/gdtoa/FreeBSD )
+      targetFlags=( "''${fbsdFlags[@]}" )
+      ${compileGroups "FreeBSD" (withExtraFlags (dropExcluded sourceLists.FreeBSD))}
+
+      # NetBSD_CFLAGS + NetBSD_SEARCH_PATHS.
+      targetFlags=( -include $PWD/nbsdcompat/_nbsd_compat_.h -I$PWD/nbsdcompat )
+      ${compileGroups "NetBSD" (dropExcluded sourceLists.NetBSD)}
+
+      # TRE_CFLAGS + TRE_SEARCH_PATHS.
+      targetFlags=( -DHAVE_CONFIG_H -I$PWD/regex/TRE -I$PWD/regex/FreeBSD )
+      ${compileGroups "TRE" (dropExcluded sourceLists.TRE)}
+
+      targetFlags=()
+      ${compileGroups "Platform" platformSources}
+      ${compileGroups "FortifySource" (dropExcluded sourceLists.FortifySource)}
+
+      # Variant targets: -DBUILDING_VARIANT + per-variant macros + FreeBSD search paths (no -include shim here).
+      targetFlags=( -I$PWD/fbsdcompat -I$PWD/gdtoa -I$PWD/gdtoa/FreeBSD )
+      ${lib.concatStringsSep "\n    " (lib.mapAttrsToList (name: v:
+        if v.files == [ ] then
+          "md_log 'libsystem_c/Variant_${name}: 0 objects (no file list for this architecture)'"
+        else
+          "targetFlags=( -I$PWD/fbsdcompat -I$PWD/gdtoa -I$PWD/gdtoa/FreeBSD -DBUILDING_VARIANT "
+          + "${lib.escapeShellArgs v.macros} )\n    "
+          + compileGroups "Variant_${name}" (map (variantFile name) v.files)
+      ) variantTargets)}
+
+      # The two files in the libsystem_c.dylib target itself.
+      targetFlags=()
+      compile Dylib "" -- darwin/compatibility_hacks.c darwin/forceLibcToBuild.c
+
+      runHook postBuild
+    '';
+
+    installPhase = "cp -R $obj $out";
+  };
 in
 
 mkDarwinPackage {
   pname = "libsystem_c-pass${if libsystemStage1 == null then "1" else "2"}";
-  version = lib.removePrefix "Libc-" sources.Libc.rev;
-
-  src = sources.Libc;
-  inherit toolchain;
-
-  nativeBuildInputs = [ perl ]; # patch_headers_variants.pl
+  inherit version toolchain;
+  dontUnpack = true;
 
   passthru.libsystemName = "system_c";
   passthru.allowUndefined = allowUndefined; # checked by rootfs.nix
+  passthru.objects = objects;
 
   buildPhase = ''
     runHook preBuild
 
-    export MD_SRCROOT=$PWD
-    obj=$PWD/o
-    mkdir -p $obj
-
-    # os_log_pack is libsystem_trace's (unreleased os/log_private.h); _os_crash_fmt dlopens it and gives up if absent.
-    # Drop the entry point rather than invent the struct (ABI risk). Also dropped from SDK's os/assumes.h.
-    # printf builds match text (replacement at column 0 would dedent Nix string).
-    packImplOpen=$(printf '__attribute__((always_inline))\nstatic inline bool\n_os_crash_fmt_impl(')
-    packImplClose=$(printf 'pack, pack_size, composed, 0);\n}')
-    packEntry=$(printf 'void _os_crash_fmt(os_log_pack_t pack, size_t pack_size)\n{\n\t_os_crash_fmt_impl(pack, pack_size);\n}')
-
-    # arc4random.c/vfprintf.c enable libtrace crash path via os_log_send_and_compose (unreleased, libsystem_trace).
-    # Their #else already falls back to plain string; guarded by !TARGET_OS_DRIVERKIT (off where libtrace absent).
-    libtraceOptIn=$(printf '#if !TARGET_OS_DRIVERKIT\n#define OS_CRASH_ENABLE_EXPERIMENTAL_LIBTRACE 1\n#endif')
-    for f in gen/FreeBSD/arc4random.c stdio/FreeBSD/vfprintf.c; do
-      substituteInPlace $f --replace-fail "$libtraceOptIn" \
-        '/* minidarwin: os_log_send_and_compose is libsystem_trace'"'"'s. */'
-    done
-
-    substituteInPlace os/assumes.c \
-      --replace-fail "$packImplOpen" \
-        "$(printf '#if 0 /* minidarwin: os_log_pack is libsystem_trace'"'"'s. */\n%s' "$packImplOpen")" \
-      --replace-fail "$packImplClose" \
-        "$(printf '%s\n#endif' "$packImplClose")" \
-      --replace-fail "$packEntry" \
-        '/* minidarwin: _os_crash_fmt dropped -- see above. */'
-
-    # Patch Headers: rewrites __DARWIN_ALIAS_C -> LIBC_ALIAS_C (keyed on VARIANT_*) so variant targets get distinct symbols.
-    # Runs patch_headers_variants.pl over SDK headers; Libc's own sys/cdefs.h defines LIBC_ALIAS_C. No-op on headers without aliases.
-    # Its input is SDK_SYSTEM_FRAMEWORK_HEADERS: System.framework's headers.
-    # Ours holds only the ones that differ from usr/include, so the input is
-    # usr/include with those laid over it -- what a search of the framework,
-    # then usr/include, finds. Named include/ so the output is too.
-    derived=$PWD/derived
-    sdkview=$PWD/sdkview/include
-    mkdir -p $sdkview
-    cp -R "$MINIDARWIN_SYSROOT/usr/include/." $sdkview/
-    chmod -R u+w $sdkview
-    cp -R "$MINIDARWIN_SYSROOT${systemFrameworkHeaders}/." $sdkview/
-    perl xcodescripts/patch_headers_variants.pl \
-      "$sdkview" "$derived/System.framework/Versions/B"
-    patched=$derived/System.framework/Versions/B/include
-    [ -e "$patched/sys/fcntl.h" ] || { echo "Patch Headers produced nothing" >&2; exit 1; }
-    grep -q 'LIBC_ALIAS_CREAT' "$patched/sys/fcntl.h" ||
-      { echo "Patch Headers did not rewrite the __DARWIN_ALIAS declarations" >&2; exit 1; }
-
-    # Libc's include/ ahead of patched tree (its sys/cdefs.h defines LIBC_ALIAS_C via #include_next).
-    incflags=( -I$PWD -I$PWD/include -I$PWD/gen -I$PWD/locale
-               -I$PWD/locale/FreeBSD -I$PWD/stdtime/FreeBSD -I$PWD/darwin
-               -isystem "$patched" )
-
-    targetFlags=()
-
-    # One compile invocation per COMPILER_FLAGS group; paths relative to $PWD (not escaped).
-    compile() { # <target> <per-file flags> -- <relative source>...
-      local target="$1" fileFlags="$2"; shift 2
-      [ "$1" = "--" ] && shift
-      fileFlags=''${fileFlags//'$(FreeBSD_CFLAGS)'/-include $MD_SRCROOT/fbsdcompat/_fbsd_compat_.h}
-      fileFlags=''${fileFlags//'$(SRCROOT)'/$MD_SRCROOT}
-      case "$fileFlags" in
-        *'$('*) echo "libsystem_c: unexpanded variable in COMPILER_FLAGS: $fileFlags" >&2; exit 1 ;;
-      esac
-      local f srcs=()
-      for f in "$@"; do srcs+=( "$MD_SRCROOT/$f" ); done
-      md_log "libsystem_c/$target: ''${#srcs[@]} objects''${fileFlags:+ [$fileFlags]}"
-      md_compile $obj/$target "$CC" ${lib.escapeShellArgs commonCFlags} \
-        "''${targetFlags[@]}" $fileFlags "''${incflags[@]}" -- "''${srcs[@]}"
-    }
-
-    ${compileGroups "Base" (dropExcluded sourceLists.Base)}
-
-    # FreeBSD_CFLAGS + FreeBSD_SEARCH_PATHS.
-    fbsdFlags=( -include $PWD/fbsdcompat/_fbsd_compat_.h
-                -I$PWD/fbsdcompat -I$PWD/gdtoa -I$PWD/gdtoa/FreeBSD )
-    targetFlags=( "''${fbsdFlags[@]}" )
-    ${compileGroups "FreeBSD" (withExtraFlags (dropExcluded sourceLists.FreeBSD))}
-
-    # NetBSD_CFLAGS + NetBSD_SEARCH_PATHS.
-    targetFlags=( -include $PWD/nbsdcompat/_nbsd_compat_.h -I$PWD/nbsdcompat )
-    ${compileGroups "NetBSD" (dropExcluded sourceLists.NetBSD)}
-
-    # TRE_CFLAGS + TRE_SEARCH_PATHS.
-    targetFlags=( -DHAVE_CONFIG_H -I$PWD/regex/TRE -I$PWD/regex/FreeBSD )
-    ${compileGroups "TRE" (dropExcluded sourceLists.TRE)}
-
-    targetFlags=()
-    ${compileGroups "Platform" platformSources}
-    ${compileGroups "FortifySource" (dropExcluded sourceLists.FortifySource)}
-
-    # Variant targets: -DBUILDING_VARIANT + per-variant macros + FreeBSD search paths (no -include shim here).
-    targetFlags=( -I$PWD/fbsdcompat -I$PWD/gdtoa -I$PWD/gdtoa/FreeBSD )
-    ${lib.concatStringsSep "\n    " (lib.mapAttrsToList (name: v:
-      if v.files == [ ] then
-        "md_log 'libsystem_c/Variant_${name}: 0 objects (no file list for this architecture)'"
-      else
-        "targetFlags=( -I$PWD/fbsdcompat -I$PWD/gdtoa -I$PWD/gdtoa/FreeBSD -DBUILDING_VARIANT "
-        + "${lib.escapeShellArgs v.macros} )\n    "
-        + compileGroups "Variant_${name}" (map (variantFile name) v.files)
-    ) variantTargets)}
-
-    # The two files in the libsystem_c.dylib target itself.
-    targetFlags=()
-    compile Dylib "" -- darwin/compatibility_hacks.c darwin/forceLibcToBuild.c
-
     # alias.list (22 libplatform symbols like __platform_memmove→_memcpy) skipped: ld64.lld can't alias imported symbols; applied in libplatform where targets are local.
-    md_dylib libsystem_c.dylib /usr/lib/system/libsystem_c.dylib $obj \
+    md_dylib libsystem_c.dylib /usr/lib/system/libsystem_c.dylib ${objects} \
       ${lib.escapeShellArgs linkFlags}
 
     runHook postBuild

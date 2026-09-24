@@ -40,66 +40,82 @@ let
   # OSSPINLOCK_USE_INLINED controls whether OSAtomic.h declares or inlines OSSpinLock; libos defines out-of-line (0), others inline (1).
   defaultSpinlock = [ "-DOSSPINLOCK_USE_INLINED=1" "-DOS_UNFAIR_LOCK_INLINE=0" ];
   osSpinlock = [ "-DOSSPINLOCK_USE_INLINED=0" "-DOSSPINLOCK_DEPRECATED=0" "-DOS_UNFAIR_LOCK_INLINE=0" ];
+
+  version = lib.removePrefix "libplatform-" sources.libplatform.rev;
+
+  # Independent of libsystemStage1, so both passes share this one derivation.
+  objects = mkDarwinPackage {
+    pname = "libsystem_platform-objects";
+    inherit version toolchain;
+
+    src = sources.libplatform;
+    buildPhase = ''
+      runHook preBuild
+
+      export MD_SRCROOT=$PWD
+      obj=$PWD/o
+      mkdir -p $obj
+
+      # AppleFeatures.h is unreleased and unused here (2 files include it, no macro used).
+      for f in src/init.c src/os/security_config.c; do
+        substituteInPlace $f \
+          --replace-fail '#include <AppleFeatures/AppleFeatures.h>' \
+            '/* minidarwin: AppleFeatures.h is unreleased and unused here. */'
+      done
+
+      # bzero.c hidden memset just calls _platform_memset; dropped because _memset alias below provides same symbol (duplicate otherwise).
+      memsetShim=$(printf '__attribute__((visibility("hidden")))\nvoid *\nmemset(void *b, int c, size_t len)\n{\n\treturn _platform_memset(b, c, len);\n}')
+      substituteInPlace src/string/generic/bzero.c \
+        --replace-fail "$memsetShim" \
+        '/* minidarwin: superseded by the _memset alias; see libsystem-platform.nix. */'
+
+      incflags=( -I$PWD/private -I$PWD/include -I$PWD/internal -I$PWD/src/os/resolver
+                 -iwithsysroot ${systemFrameworkHeaders} ) # SYSTEM_HEADER_SEARCH_PATHS
+
+      # All components: generic + arch subdir per component; exclavekit omitted (separate SDK, collides with os/lock.c).
+      mapfile -t sources < <(md_glob \
+        $PWD/src/*.c \
+        $PWD/src/atomics/*.c        $PWD/src/atomics/common/*.c \
+        $PWD/src/atomics/${archFamily}/*.c   $PWD/src/atomics/${archFamily}/*.s \
+        $PWD/src/cachecontrol/generic/*.c \
+        $PWD/src/cachecontrol/${archFamily}/*.c $PWD/src/cachecontrol/${archFamily}/*.s \
+        $PWD/src/setjmp/generic/*.c \
+        $PWD/src/setjmp/${archFamily}/*.c    $PWD/src/setjmp/${archFamily}/*.s \
+        $PWD/src/simple/*.c \
+        $PWD/src/string/generic/*.c \
+        $PWD/src/string/${archFamily}/*.c    $PWD/src/string/${archFamily}/*.s \
+        $PWD/src/timingsafe/${archFamily}/*.c \
+        $PWD/src/ucontext/generic/*.c \
+        $PWD/src/ucontext/${archFamily}/*.c  $PWD/src/ucontext/${archFamily}/*.s)
+
+      mapfile -t osSources < <(md_glob $PWD/src/os/*.c) # libos needs separate spinlock flags
+
+      md_log "libplatform: ''${#sources[@]} + ''${#osSources[@]} objects"
+
+      md_compile $obj "$CC" ${lib.escapeShellArgs (commonCFlags ++ defaultSpinlock)} \
+        "''${incflags[@]}" -- "''${sources[@]}"
+      md_compile $obj "$CC" ${lib.escapeShellArgs (commonCFlags ++ osSpinlock)} \
+        "''${incflags[@]}" -- "''${osSources[@]}"
+
+      runHook postBuild
+    '';
+
+    installPhase = "cp -R $obj $out";
+  };
 in
 
 mkDarwinPackage {
   pname = "libsystem_platform-pass${if libsystemStage1 == null then "1" else "2"}";
-  version = lib.removePrefix "libplatform-" sources.libplatform.rev;
-
-  src = sources.libplatform;
-  inherit toolchain;
+  inherit version toolchain;
+  dontUnpack = true;
 
   passthru.libsystemName = "system_platform";
+  passthru.objects = objects;
 
   buildPhase = ''
     runHook preBuild
 
-    export MD_SRCROOT=$PWD
-    obj=$PWD/o
-    mkdir -p $obj
-
-    # AppleFeatures.h is unreleased and unused here (2 files include it, no macro used).
-    for f in src/init.c src/os/security_config.c; do
-      substituteInPlace $f \
-        --replace-fail '#include <AppleFeatures/AppleFeatures.h>' \
-          '/* minidarwin: AppleFeatures.h is unreleased and unused here. */'
-    done
-
-    # bzero.c hidden memset just calls _platform_memset; dropped because _memset alias below provides same symbol (duplicate otherwise).
-    memsetShim=$(printf '__attribute__((visibility("hidden")))\nvoid *\nmemset(void *b, int c, size_t len)\n{\n\treturn _platform_memset(b, c, len);\n}')
-    substituteInPlace src/string/generic/bzero.c \
-      --replace-fail "$memsetShim" \
-      '/* minidarwin: superseded by the _memset alias; see libsystem-platform.nix. */'
-
-    incflags=( -I$PWD/private -I$PWD/include -I$PWD/internal -I$PWD/src/os/resolver
-               -iwithsysroot ${systemFrameworkHeaders} ) # SYSTEM_HEADER_SEARCH_PATHS
-
-    # All components: generic + arch subdir per component; exclavekit omitted (separate SDK, collides with os/lock.c).
-    mapfile -t sources < <(md_glob \
-      $PWD/src/*.c \
-      $PWD/src/atomics/*.c        $PWD/src/atomics/common/*.c \
-      $PWD/src/atomics/${archFamily}/*.c   $PWD/src/atomics/${archFamily}/*.s \
-      $PWD/src/cachecontrol/generic/*.c \
-      $PWD/src/cachecontrol/${archFamily}/*.c $PWD/src/cachecontrol/${archFamily}/*.s \
-      $PWD/src/setjmp/generic/*.c \
-      $PWD/src/setjmp/${archFamily}/*.c    $PWD/src/setjmp/${archFamily}/*.s \
-      $PWD/src/simple/*.c \
-      $PWD/src/string/generic/*.c \
-      $PWD/src/string/${archFamily}/*.c    $PWD/src/string/${archFamily}/*.s \
-      $PWD/src/timingsafe/${archFamily}/*.c \
-      $PWD/src/ucontext/generic/*.c \
-      $PWD/src/ucontext/${archFamily}/*.c  $PWD/src/ucontext/${archFamily}/*.s)
-
-    mapfile -t osSources < <(md_glob $PWD/src/os/*.c) # libos needs separate spinlock flags
-
-    md_log "libplatform: ''${#sources[@]} + ''${#osSources[@]} objects"
-
-    md_compile $obj "$CC" ${lib.escapeShellArgs (commonCFlags ++ defaultSpinlock)} \
-      "''${incflags[@]}" -- "''${sources[@]}"
-    md_compile $obj "$CC" ${lib.escapeShellArgs (commonCFlags ++ osSpinlock)} \
-      "''${incflags[@]}" -- "''${osSources[@]}"
-
-    mapfile -t aliasFlags < <(md_alias_flags $PWD/xcodeconfig/libplatform.aliases) # eliding/transactional locks -> spin, bzero -> ___bzero
+    mapfile -t aliasFlags < <(md_alias_flags ${sources.libplatform}/xcodeconfig/libplatform.aliases) # eliding/transactional locks -> spin, bzero -> ___bzero
 
     # Libc's alias.list (22 symbols like __platform_memmove→_memcpy) belongs to libsystem_c but ld64.lld can't alias imported symbols.
     # Applied here where targets are local; umbrella re-exports both members so libSystem clients see same names.
@@ -110,7 +126,7 @@ mkDarwinPackage {
     aliasFlags+=( -Wl,-alias,_flsll,_flsl )
 
     md_dylib libsystem_platform.dylib \
-      /usr/lib/system/libsystem_platform.dylib $obj \
+      /usr/lib/system/libsystem_platform.dylib ${objects} \
       "''${aliasFlags[@]}" \
       ${lib.escapeShellArgs linkFlags}
 

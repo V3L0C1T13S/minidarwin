@@ -54,65 +54,81 @@ let
 
   allSources = import ./libmalloc-sources.nix;
   codeFiles = builtins.filter (p: !lib.hasSuffix ".d" p) allSources;
+
+  version = lib.removePrefix "libmalloc-" sources.libmalloc.rev;
+
+  # Independent of libsystemStage1, so both passes share this one derivation.
+  objects = mkDarwinPackage {
+    pname = "libsystem_malloc-objects";
+    inherit version toolchain;
+
+    src = sources.libmalloc;
+    nativeBuildInputs = [ python3 ];
+
+    buildPhase = ''
+      runHook preBuild
+
+      export MD_SRCROOT=$PWD
+      obj=$PWD/o
+      derived=$PWD/derived/dtrace
+      mkdir -p $obj $derived
+
+      # featureflags: <os/feature_private.h> unreleased; guard with __has_include and disable CONFIG_FEATUREFLAGS_SIMPLE fallback.
+      substituteInPlace src/internal.h --replace-fail \
+        '#if !TARGET_OS_DRIVERKIT && !MALLOC_TARGET_EXCLAVES
+  # include <os/feature_private.h>' \
+        '#if !TARGET_OS_DRIVERKIT && !MALLOC_TARGET_EXCLAVES && __has_include(<os/feature_private.h>)
+  # include <os/feature_private.h>'
+
+      substituteInPlace src/platform.h --replace-fail \
+        '#if !TARGET_OS_DRIVERKIT && (!TARGET_OS_OSX || MALLOC_TARGET_64BIT)
+  #define CONFIG_FEATUREFLAGS_SIMPLE 1' \
+        '#if !TARGET_OS_DRIVERKIT && (!TARGET_OS_OSX || MALLOC_TARGET_64BIT) && __has_include(<os/feature_private.h>)
+  #define CONFIG_FEATUREFLAGS_SIMPLE 1'
+
+      # nano v1 layout is x86_64-only; narrow guard so arm64 doesn't hit #error (v1 vestigial, nanov2 is the arm64 allocator).
+      substituteInPlace src/nano_zone.h --replace-fail \
+        '#if CONFIG_NANOZONE' \
+        '#if CONFIG_NANOZONE && defined(__x86_64__) /* minidarwin: v1 layout is x86_64-only */'
+
+      # DTrace: generate magmallocProvider.h via stub (no host dtrace); mirrors DARWINTEST no-op macros from .d file.
+      python3 ${../../scripts/dtrace-provider-stub.py} \
+        $PWD/src/magmallocProvider.d $derived/magmallocProvider.h
+
+      incflags=( -I$derived -I$PWD/include -I$PWD/private -I$PWD/resolver -I$PWD/src
+                 -iwithsysroot ${systemFrameworkHeaders} ) # SYSTEM_HEADER_SEARCH_PATHS
+
+      sources=()
+      for f in ${lib.concatStringsSep " " codeFiles}; do
+        sources+=( "$PWD/$f" )
+      done
+
+      md_log "libmalloc: ''${#sources[@]} objects"
+      md_compile $obj "$CC" ${lib.escapeShellArgs cflags} \
+        "''${incflags[@]}" -- "''${sources[@]}"
+
+      runHook postBuild
+    '';
+
+    installPhase = "cp -R $obj $out";
+  };
 in
 
 mkDarwinPackage {
   pname = "libsystem_malloc-pass${if libsystemStage1 == null then "1" else "2"}";
-  version = lib.removePrefix "libmalloc-" sources.libmalloc.rev;
-
-  src = sources.libmalloc;
-  inherit toolchain;
-
-  nativeBuildInputs = [ python3 ];
+  inherit version toolchain;
+  dontUnpack = true;
 
   passthru.libsystemName = "system_malloc";
   passthru.allowUndefined = allowUndefined; # checked by rootfs.nix
+  passthru.objects = objects;
 
   buildPhase = ''
     runHook preBuild
 
-    export MD_SRCROOT=$PWD
-    obj=$PWD/o
-    derived=$PWD/derived/dtrace
-    mkdir -p $obj $derived
-
-    # featureflags: <os/feature_private.h> unreleased; guard with __has_include and disable CONFIG_FEATUREFLAGS_SIMPLE fallback.
-    substituteInPlace src/internal.h --replace-fail \
-      '#if !TARGET_OS_DRIVERKIT && !MALLOC_TARGET_EXCLAVES
-# include <os/feature_private.h>' \
-      '#if !TARGET_OS_DRIVERKIT && !MALLOC_TARGET_EXCLAVES && __has_include(<os/feature_private.h>)
-# include <os/feature_private.h>'
-
-    substituteInPlace src/platform.h --replace-fail \
-      '#if !TARGET_OS_DRIVERKIT && (!TARGET_OS_OSX || MALLOC_TARGET_64BIT)
-#define CONFIG_FEATUREFLAGS_SIMPLE 1' \
-      '#if !TARGET_OS_DRIVERKIT && (!TARGET_OS_OSX || MALLOC_TARGET_64BIT) && __has_include(<os/feature_private.h>)
-#define CONFIG_FEATUREFLAGS_SIMPLE 1'
-
-    # nano v1 layout is x86_64-only; narrow guard so arm64 doesn't hit #error (v1 vestigial, nanov2 is the arm64 allocator).
-    substituteInPlace src/nano_zone.h --replace-fail \
-      '#if CONFIG_NANOZONE' \
-      '#if CONFIG_NANOZONE && defined(__x86_64__) /* minidarwin: v1 layout is x86_64-only */'
-
-    # DTrace: generate magmallocProvider.h via stub (no host dtrace); mirrors DARWINTEST no-op macros from .d file.
-    python3 ${../../scripts/dtrace-provider-stub.py} \
-      $PWD/src/magmallocProvider.d $derived/magmallocProvider.h
-
-    incflags=( -I$derived -I$PWD/include -I$PWD/private -I$PWD/resolver -I$PWD/src
-               -iwithsysroot ${systemFrameworkHeaders} ) # SYSTEM_HEADER_SEARCH_PATHS
-
-    sources=()
-    for f in ${lib.concatStringsSep " " codeFiles}; do
-      sources+=( "$PWD/$f" )
-    done
-
-    md_log "libmalloc: ''${#sources[@]} objects"
-    md_compile $obj "$CC" ${lib.escapeShellArgs cflags} \
-      "''${incflags[@]}" -- "''${sources[@]}"
-
     # INTERPOSE_LDFLAGS (-interposable_list) skipped: ld64.lld doesn't implement it; only affects DYLD_INSERT_LIBRARIES interposing.
     md_dylib libsystem_malloc.dylib \
-      /usr/lib/system/libsystem_malloc.dylib $obj \
+      /usr/lib/system/libsystem_malloc.dylib ${objects} \
       ${lib.escapeShellArgs linkFlags}
 
     runHook postBuild

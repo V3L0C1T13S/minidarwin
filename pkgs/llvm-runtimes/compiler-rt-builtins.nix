@@ -163,7 +163,8 @@ mkDarwinPackage {
 
     ############################################################ outline atomics (aarch64 only)
     ${lib.optionalString isAarch64 ''
-      # One object per (pattern, size, model) from lse.S.
+      # One object per (pattern, size, model) from lse.S. Each md_compile is a
+      # single file with its own -D set, so they run side by side.
       mkdir -p builtins/lse
       n=0
       for pat in ${lib.concatStringsSep " " lsePatterns}; do
@@ -172,13 +173,14 @@ mkDarwinPackage {
           for model in ${lib.concatStringsSep " " (map toString lseModels)}; do
             h=builtins/lse/outline_atomic_''${pat}''${size}_''${model}.S
             cp builtins/aarch64/lse.S $h
-            md_compile $obj "$CC" ${lib.escapeShellArgs builtinCFlags} \
+            md_spawn md_compile $obj "$CC" ${lib.escapeShellArgs builtinCFlags} \
               -DL_$pat -DSIZE=$size -DMODEL=$model -Ibuiltins \
               -- $h
             n=$((n + 1))
           done
         done
       done
+      md_join
       md_log "compiler-rt builtins: $n outline atomics helpers"
       [ "$n" = 125 ] || { echo "expected 125 outline atomics helpers, got $n" >&2; exit 1; }
     ''}

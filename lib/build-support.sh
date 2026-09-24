@@ -46,6 +46,30 @@ md_cmake_list() {
   printf '%s\n' "$out"
 }
 
+# md_spawn <cmd>... - run in the background, at most NIX_BUILD_CORES at once.
+# Starts the next job when *any* running one finishes (not the oldest). A
+# function that spawns its own jobs declares `local MD_SPAWNED=()` first.
+MD_SPAWNED=()
+md_spawn() {
+  local jobs="${NIX_BUILD_CORES:-1}" done_pid p keep
+  [ "$jobs" -gt 0 ] || jobs=1
+  while [ "${#MD_SPAWNED[@]}" -ge "$jobs" ]; do
+    wait -n -p done_pid "${MD_SPAWNED[@]}" || return 1
+    keep=()
+    for p in "${MD_SPAWNED[@]}"; do [ "$p" = "$done_pid" ] || keep+=( "$p" ); done
+    MD_SPAWNED=( "${keep[@]}" )
+  done
+  "$@" &
+  MD_SPAWNED+=( $! )
+}
+
+# md_join - wait for every md_spawn'd job; fails if any did.
+md_join() {
+  local p
+  for p in "${MD_SPAWNED[@]}"; do wait "$p" || return 1; done
+  MD_SPAWNED=()
+}
+
 # md_compile <outdir> <compiler> <flags...> -- <file>... - hash avoids same-name collisions.
 md_compile() {
   local outdir="$1"; shift
@@ -55,10 +79,8 @@ md_compile() {
   shift # past --
 
   mkdir -p "$outdir"
-  local jobs="${NIX_BUILD_CORES:-1}"
-  [ "$jobs" -gt 0 ] || jobs=1
 
-  local f rel tag obj pids=()
+  local f rel tag obj MD_SPAWNED=()
   for f in "$@"; do
     rel="${f#"$MD_SRCROOT"/}"
     tag=$(printf '%s' "$rel" | cksum | cut -d' ' -f1)
@@ -73,15 +95,9 @@ md_compile() {
       *.mm) langflags=( -x objective-c++ ) ;;
     esac
 
-    "$cc" "${flags[@]}" "${langflags[@]}" -c "$f" -o "$obj" &
-    pids+=( $! )
-    if [ "${#pids[@]}" -ge "$jobs" ]; then
-      wait "${pids[0]}"
-      pids=( "${pids[@]:1}" )
-    fi
+    md_spawn "$cc" "${flags[@]}" "${langflags[@]}" -c "$f" -o "$obj" || return 1
   done
-  local p
-  for p in "${pids[@]}"; do wait "$p"; done
+  md_join
 }
 
 # md_alias_flags <alias-list> - translate Apple -alias_list to -Wl,-alias (lld ignores -alias_list).

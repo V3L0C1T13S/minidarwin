@@ -22,16 +22,19 @@ stdenvNoCC.mkDerivation {
     cp -R ${sdkHeaders} $out
     chmod -R u+w $out
 
-    # Merge runtimes (collision is an error).
+    # Merge runtimes (collision is an error). Checked per file, copied per
+    # package: an `install` per header costs seconds over libc++'s.
     for pkg in ${libunwind} ${libcxxHeaders} ${libcxxabi} ${libcxx}; do
-      while IFS= read -r f; do
-        rel="''${f#$pkg/}"
+      (cd $pkg && find . -type f | sort) > $TMPDIR/files
+      while IFS= read -r rel; do
         if [ -e "$out/$rel" ]; then
-          echo "sdk-stage2: $rel provided by more than one runtime" >&2
+          echo "sdk-stage2: ''${rel#./} provided by more than one runtime" >&2
           exit 1
         fi
-        install -Dm644 "$f" "$out/$rel"
-      done < <(find $pkg -type f | sort)
+      done < $TMPDIR/files
+      cp -R $pkg/. $out/
+      chmod -R u+w $out
+      (cd $out && xargs chmod 644 < $TMPDIR/files)
     done
 
     test -e $out/usr/include/c++/v1/vector

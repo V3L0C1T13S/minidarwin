@@ -43,35 +43,52 @@ let
     "libmacho/slot_name.c"
     "libmacho/swap.c"
   ];
+
+  version = lib.removePrefix "cctools-" sources.cctools.rev;
+
+  # Independent of libsystemStage1, so both passes share this one derivation.
+  objects = mkDarwinPackage {
+    pname = "libmacho-objects";
+    inherit version toolchain;
+
+    src = sources.cctools;
+
+    buildPhase = ''
+      runHook preBuild
+
+      export MD_SRCROOT=$PWD
+      obj=$PWD/o
+      mkdir -p $obj
+
+      sources=()
+      for f in ${lib.concatStringsSep " " codeFiles}; do
+        sources+=( "$PWD/$f" )
+      done
+
+      md_log "libmacho: ''${#sources[@]} objects"
+      md_compile $obj "$CC" ${lib.escapeShellArgs cflags} \
+        -I$PWD/include -- "''${sources[@]}"
+
+      runHook postBuild
+    '';
+
+    installPhase = "cp -R $obj $out";
+  };
 in
 
 mkDarwinPackage {
   pname = "libmacho-pass${if libsystemStage1 == null then "1" else "2"}";
-  version = lib.removePrefix "cctools-" sources.cctools.rev;
-
-  src = sources.cctools;
-  inherit toolchain;
+  inherit version toolchain;
+  dontUnpack = true;
 
   passthru.libsystemName = "macho";
   passthru.allowUndefined = allowUndefined; # checked by rootfs.nix
+  passthru.objects = objects;
 
   buildPhase = ''
     runHook preBuild
 
-    export MD_SRCROOT=$PWD
-    obj=$PWD/o
-    mkdir -p $obj
-
-    sources=()
-    for f in ${lib.concatStringsSep " " codeFiles}; do
-      sources+=( "$PWD/$f" )
-    done
-
-    md_log "libmacho: ''${#sources[@]} objects"
-    md_compile $obj "$CC" ${lib.escapeShellArgs cflags} \
-      -I$PWD/include -- "''${sources[@]}"
-
-    md_dylib libmacho.dylib /usr/lib/system/libmacho.dylib $obj \
+    md_dylib libmacho.dylib /usr/lib/system/libmacho.dylib ${objects} \
       -Wl,-application_extension \
       ${lib.escapeShellArgs linkFlags}
 

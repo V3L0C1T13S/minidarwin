@@ -22,30 +22,46 @@ let
     "-fexceptions"
     "-Os"
   ];
+
+  version = lib.removePrefix "libclosure-" sources.libclosure.rev;
+
+  # Independent of libsystemStage1, so both passes share this one derivation.
+  objects = mkDarwinPackage {
+    pname = "libsystem_blocks-objects";
+    inherit version toolchain;
+
+    src = sources.libclosure;
+    buildPhase = ''
+      runHook preBuild
+
+      export MD_SRCROOT=$PWD
+      obj=$PWD/o
+      mkdir -p $obj
+
+      md_compile $obj "$CXX" ${lib.escapeShellArgs cflags} -- \
+        $PWD/runtime.cpp
+      md_compile $obj "$CC" ${lib.escapeShellArgs cflags} -- \
+        $PWD/data.c $PWD/data.m $PWD/generic_helpers.c
+
+      runHook postBuild
+    '';
+
+    installPhase = "cp -R $obj $out";
+  };
 in
 
 mkDarwinPackage {
   pname = "libsystem_blocks-pass${if libsystemStage1 == null then "1" else "2"}";
-  version = lib.removePrefix "libclosure-" sources.libclosure.rev;
-
-  src = sources.libclosure;
-  inherit toolchain;
+  inherit version toolchain;
+  dontUnpack = true;
 
   passthru.libsystemName = "system_blocks";
+  passthru.objects = objects;
 
   buildPhase = ''
     runHook preBuild
 
-    export MD_SRCROOT=$PWD
-    obj=$PWD/o
-    mkdir -p $obj
-
-    md_compile $obj "$CXX" ${lib.escapeShellArgs cflags} -- \
-      $PWD/runtime.cpp
-    md_compile $obj "$CC" ${lib.escapeShellArgs cflags} -- \
-      $PWD/data.c $PWD/data.m $PWD/generic_helpers.c
-
-    md_dylib libsystem_blocks.dylib /usr/lib/system/libsystem_blocks.dylib $obj \
+    md_dylib libsystem_blocks.dylib /usr/lib/system/libsystem_blocks.dylib ${objects} \
       ${lib.escapeShellArgs linkFlags}
 
     runHook postBuild

@@ -52,51 +52,67 @@ let
   ];
 
   codeFiles = import ./libpthread-sources.nix;
+
+  version = lib.removePrefix "libpthread-" sources.libpthread.rev;
+
+  # Independent of libsystemStage1, so both passes share this one derivation.
+  objects = mkDarwinPackage {
+    pname = "libsystem_pthread-objects";
+    inherit version toolchain;
+
+    src = sources.libpthread;
+    buildPhase = ''
+      runHook preBuild
+
+      export MD_SRCROOT=$PWD
+      obj=$PWD/o
+      mkdir -p $obj
+
+      # _os_xbs_chrooted is defined in libsyscall but undeclared in this tree; inject declaration via imports_internal.h.
+      substituteInPlace src/imports_internal.h --replace-fail \
+        'extern boolean_t swtch_pri(int);' \
+        'extern boolean_t swtch_pri(int);
+
+  /* minidarwin: defined in libsyscall (_libkernel_init.c), exported from
+     libsystem_kernel, declared only in Apple'"'"'s internal SDK. */
+  #include <stdbool.h>
+  extern bool _os_xbs_chrooted;'
+
+      incflags=( -I$PWD/src/resolver -I$PWD/private -I$PWD/include -I$PWD # source headers ahead of sysroot
+                 -iwithsysroot ${systemFrameworkHeaders} ) # SYSTEM_HEADER_SEARCH_PATHS
+
+      sources=()
+      for f in ${lib.concatStringsSep " " codeFiles}; do
+        sources+=( "$PWD/$f" )
+      done
+
+      md_log "libpthread: ''${#sources[@]} objects"
+      md_compile $obj "$CC" ${lib.escapeShellArgs cflags} \
+        "''${incflags[@]}" -- "''${sources[@]}"
+
+      runHook postBuild
+    '';
+
+    installPhase = "cp -R $obj $out";
+  };
 in
 
 mkDarwinPackage {
   pname = "libsystem_pthread-pass${if libsystemStage1 == null then "1" else "2"}";
-  version = lib.removePrefix "libpthread-" sources.libpthread.rev;
-
-  src = sources.libpthread;
-  inherit toolchain;
+  inherit version toolchain;
+  dontUnpack = true;
 
   passthru.libsystemName = "system_pthread";
   passthru.allowUndefined = allowUndefined; # checked by rootfs.nix
+  passthru.objects = objects;
 
   buildPhase = ''
     runHook preBuild
 
-    export MD_SRCROOT=$PWD
-    obj=$PWD/o
-    mkdir -p $obj
-
-    # _os_xbs_chrooted is defined in libsyscall but undeclared in this tree; inject declaration via imports_internal.h.
-    substituteInPlace src/imports_internal.h --replace-fail \
-      'extern boolean_t swtch_pri(int);' \
-      'extern boolean_t swtch_pri(int);
-
-/* minidarwin: defined in libsyscall (_libkernel_init.c), exported from
-   libsystem_kernel, declared only in Apple'"'"'s internal SDK. */
-#include <stdbool.h>
-extern bool _os_xbs_chrooted;'
-
-    incflags=( -I$PWD/src/resolver -I$PWD/private -I$PWD/include -I$PWD # source headers ahead of sysroot
-               -iwithsysroot ${systemFrameworkHeaders} ) # SYSTEM_HEADER_SEARCH_PATHS
-
-    sources=()
-    for f in ${lib.concatStringsSep " " codeFiles}; do
-      sources+=( "$PWD/$f" )
-    done
-
-    md_log "libpthread: ''${#sources[@]} objects"
-    md_compile $obj "$CC" ${lib.escapeShellArgs cflags} \
-      "''${incflags[@]}" -- "''${sources[@]}"
-
-    mapfile -t aliasFlags < <(md_alias_flags $PWD/xcodescripts/pthread.aliases) # provides $NOCANCEL/$UNIX2003 aliases
+    mapfile -t aliasFlags < <(md_alias_flags ${sources.libpthread}/xcodescripts/pthread.aliases) # provides $NOCANCEL/$UNIX2003 aliases
 
     md_dylib libsystem_pthread.dylib \
-      /usr/lib/system/libsystem_pthread.dylib $obj \
+      /usr/lib/system/libsystem_pthread.dylib ${objects} \
       "''${aliasFlags[@]}" \
       ${lib.escapeShellArgs linkFlags}
 

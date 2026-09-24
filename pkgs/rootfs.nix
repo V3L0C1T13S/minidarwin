@@ -43,28 +43,23 @@ mkDarwinPackage {
 
     mkdir -p $out/usr/lib/system
 
+    # Checked per file, copied per member: an `install` per file costs
+    # seconds over terminfo's 2,684 entries.
     for pkg in ${lib.escapeShellArgs members}; do
-      while IFS= read -r f; do
-        rel="''${f#$pkg/}"
-        if [ -e "$out/$rel" ]; then
-          echo "rootfs: $rel provided by more than one input" >&2
-          exit 1
-        fi
-        # Keep the exec bit: the release maps it to 0755 vs 0644 (man pages).
-        if [ -x "$f" ]; then mode=755; else mode=644; fi
-        install -Dm$mode "$f" "$out/$rel"
-      done < <(find $pkg -type f | sort)
-      # Symlinks (libSystem.dylib etc., not found by -type f).
-      while IFS= read -r l; do
-        rel="''${l#$pkg/}"
+      # Files and symlinks (libSystem.dylib etc.).
+      while IFS= read -r rel; do
         if [ -e "$out/$rel" ] || [ -L "$out/$rel" ]; then
-          echo "rootfs: $rel provided by more than one input" >&2
+          echo "rootfs: ''${rel#./} provided by more than one input" >&2
           exit 1
         fi
-        mkdir -p "$(dirname "$out/$rel")"
-        cp -a "$l" "$out/$rel"
-      done < <(find $pkg -type l | sort)
+      done < <(cd $pkg && find . \( -type f -o -type l \) | sort)
+      cp -R $pkg/. $out/
+      chmod -R u+w $out
     done
+    # Keep the exec bit: the release maps it to 0755 vs 0644 (man pages).
+    find $out -type d -exec chmod 755 {} +
+    find $out -type f -perm -u+x -exec chmod 755 {} +
+    find $out -type f ! -perm -u+x -exec chmod 644 {} +
 
     # Dylibs plus executables (everything under a bin/ or sbin/).
     find $out -type f \( -name '*.dylib' -o -path '*/bin/*' -o -path '*/sbin/*' \) |

@@ -5,7 +5,6 @@
 , llvmVersion
 , toolchain
 , libcxxHeaders
-, libcxxabi
 }:
 
 let
@@ -92,7 +91,10 @@ mkDarwinPackage {
       -Ilibcxx
       -I${llvmSource}/libc
       -I${libcxxHeaders}/usr/include/c++/v1
-      -I${libcxxabi}/usr/include/c++/v1
+      # cxxabi.h from the source, as LIBCXX_CXX_ABI_INCLUDE_PATHS does -- not
+      # the libcxxabi package, which installs the same two files and would
+      # make this wait for the whole of libc++abi to compile.
+      -I${llvmSource}/libcxxabi/include
     )
 
     obj=$PWD/o

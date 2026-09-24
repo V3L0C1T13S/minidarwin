@@ -32,37 +32,53 @@ let
     "collections/Source/collections_map.c"
     "collections/Source/collections_set.c"
   ];
+
+  version = lib.removePrefix "Libc-" sources.Libc.rev;
+
+  # Independent of libsystemStage1, so both passes share this one derivation.
+  objects = mkDarwinPackage {
+    pname = "libsystem_collections-objects";
+    inherit version toolchain;
+
+    src = sources.Libc;
+    buildPhase = ''
+      runHook preBuild
+
+      export MD_SRCROOT=$PWD
+      obj=$PWD/o
+      mkdir -p $obj
+
+      sources=()
+      for f in ${lib.concatStringsSep " " codeFiles}; do
+        sources+=( "$PWD/$f" )
+      done
+
+      md_log "collections: ''${#sources[@]} objects"
+      md_compile $obj "$CC" ${lib.escapeShellArgs cflags} \
+        -I$PWD/collections/PublicHeader \
+        -I$MINIDARWIN_SYSROOT${systemFrameworkHeaders} \
+        -- "''${sources[@]}" # collections.xcconfig HEADER_SEARCH_PATHS
+
+      runHook postBuild
+    '';
+
+    installPhase = "cp -R $obj $out";
+  };
 in
 
 mkDarwinPackage {
   pname = "libsystem_collections-pass${if libsystemStage1 == null then "1" else "2"}";
-  version = lib.removePrefix "Libc-" sources.Libc.rev;
-
-  src = sources.Libc;
-  inherit toolchain;
+  inherit version toolchain;
+  dontUnpack = true;
 
   passthru.libsystemName = "system_collections";
+  passthru.objects = objects;
 
   buildPhase = ''
     runHook preBuild
 
-    export MD_SRCROOT=$PWD
-    obj=$PWD/o
-    mkdir -p $obj
-
-    sources=()
-    for f in ${lib.concatStringsSep " " codeFiles}; do
-      sources+=( "$PWD/$f" )
-    done
-
-    md_log "collections: ''${#sources[@]} objects"
-    md_compile $obj "$CC" ${lib.escapeShellArgs cflags} \
-      -I$PWD/collections/PublicHeader \
-      -I$MINIDARWIN_SYSROOT${systemFrameworkHeaders} \
-      -- "''${sources[@]}" # collections.xcconfig HEADER_SEARCH_PATHS
-
     md_dylib libsystem_collections.dylib \
-      /usr/lib/system/libsystem_collections.dylib $obj \
+      /usr/lib/system/libsystem_collections.dylib ${objects} \
       ${lib.escapeShellArgs linkFlags}
 
     runHook postBuild
