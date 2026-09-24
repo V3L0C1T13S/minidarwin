@@ -5,5 +5,5 @@
 # refuses a tag whose sequence does not exceed the last published release's.
 # Bump it in the commit you tag.
 {
-  sequence = 2;
+  sequence = 3;
 }
