@@ -89,6 +89,8 @@ in
     "sha256-QqBivftpeKxcEEwQEx+Fkh8H8JAC8E684H2YHWPzx5k=";
   file = apple "file" "file-106"
     "sha256-Je5ezH0g2bu/ccExJyKlOdt0LJn3DqUNnX3MybCm4iI=";
+  curl = apple "curl" "curl-160"
+    "sha256-fUFOM7WuF2TnmQcdq4H0oOxdg26XvyjzaZq94e511zs=";
   # Last Apple nano release; this project is not part of the macOS 26 source set.
   nano = apple "nano" "nano-12"
     "sha256-mWvLo0OrjkDsAz9MRa3STnW1wWU/xKvg2UFEic2DDks=";

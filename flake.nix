@@ -61,6 +61,7 @@
             miscCmds
             awk
             file
+            curl
             nano
             bash
             zsh

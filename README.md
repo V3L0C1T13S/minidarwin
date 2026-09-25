@@ -30,6 +30,7 @@ nix build .#libmd .#textCmds      # libmd.dylib; cat, grep, sed, sort, head, tai
 nix build .#advCmds .#basicCmds    # ps, stty, tty, locale, ...; mesg, write (stage 6)
 nix build .#systemCmds            # sync, sysctl, getconf, dmesg, zic, ... (stage 6)
 nix build .#patchCmds .#miscCmds .#awk  # diff, cmp, patch; cal, tsort, units; awk (stage 6)
+nix build .#curl                  # /usr/bin/curl and static libcurl (stage 6)
 nix build .#bash .#zsh           # Apple shells at /bin/bash, /bin/sh and /bin/zsh
 nix build .#ncursesTools          # clear, tput, tset/reset, infocmp, tic, toe (stage 6)
 nix build .#rootfs                 # assembled tree at real paths (/usr/lib/system, etc.)
@@ -95,6 +96,7 @@ All files are reproducible, and can be verified 1:1 from the build workflow too.
 | `systemCmds` | Stage 6: the `system_cmds` tools a plain userland has: `sync`, `sysctl`, `getconf`, `dmesg`, `hostinfo`, `vm_stat`, `mkfile`, `nologin`, `wait4path`, `zdump`, `zic`, `ac`, `accton`, `sa`, `pwd_mkdb`. |
 | `patchCmds` / `miscCmds` / `awk` | Stage 6: `cmp`, `diff`, `diff3`, `diffstat`, `patch`, `sdiff`; `cal`, `ncal`, `calendar`, `tsort`, `units`; the one true `awk`. |
 | `bash` / `zsh` | Apple's Bash 3.2 at `/bin/bash` (also `/bin/sh`) and Zsh 5.9 at `/bin/zsh`, with their man pages and startup files. Zsh's modules are linked into its executable for the minimal rootfs. |
+| `curl` | Apple's `curl-160` (`curl` 8.7.1) at `/usr/bin/curl`, with static `libcurl.a`, headers, and man pages. This build supports unencrypted protocols including HTTP and FTP. HTTPS requires a TLS backend that is not yet in the rootfs; DNS resolver imports remain declared against the absent `system_info` library. |
 | `ncursesTools` | Stage 6: ncurses' own executables -- `clear`, `tput`, `tset` (+ `reset`), `infocmp`, `tic` (+ `captoinfo`, `infotocap`), `toe` -- linked against libncurses. |
 | `rootfs` | The assembled tree at real paths with whole-tree checks (load commands resolve, no undeclared undefined symbols). Nothing runs yet - no `/usr/lib/dyld`. |
 | `rootfsRelease` | `rootfs` packed for distribution: a reproducible `.tar.gz`, a `manifest.yaml` (type, mode and SHA-256 of every path, plus a Merkle tree digest), a `spec.yaml` pinning both, and a `.bundle.zip` of all three. |
