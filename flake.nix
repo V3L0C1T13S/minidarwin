@@ -83,6 +83,7 @@
             libsystemMalloc;
 
           sdk = scope.sdkHeaders;
+          perl = scope.darwinPerl;
           default = scope.sdkHeaders;
         });
 

@@ -96,6 +96,8 @@ in
     "sha256-mWvLo0OrjkDsAz9MRa3STnW1wWU/xKvg2UFEic2DDks=";
   bash = apple "bash" "bash-144"
     "sha256-NbbE30OAlKS25OeB/kO30Y8UbmaLbuckFMsLoMSsYa8=";
+  perl = apple "perl" "perl-175"
+    "sha256-q7yj2YUcXXGeqwq2zMh4cvc8AmIKeGUKbOVPdE3WhqM=";
   ksh = apple "ksh" "ksh-42"
     "sha256-pxWn1tQQQbK1opytoVwBVQDIQ2SaLO9a0p/AzBvI/Tc=";
   zsh = apple "zsh" "zsh-118"

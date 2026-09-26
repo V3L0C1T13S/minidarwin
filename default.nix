@@ -352,6 +352,9 @@ lib.makeScope pkgs.newScope (self: with self; {
   bash = callPackage ./pkgs/bash/bash.nix {
     toolchain = toolchainStage3;
   };
+  darwinPerl = callPackage ./pkgs/perl/perl.nix {
+    toolchain = toolchainStage3;
+  };
   zsh = callPackage ./pkgs/zsh/zsh.nix {
     toolchain = toolchainStage3;
   };

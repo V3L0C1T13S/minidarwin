@@ -32,6 +32,7 @@ nix build .#systemCmds            # sync, sysctl, getconf, dmesg, zic, ... (stag
 nix build .#patchCmds .#miscCmds .#awk  # diff, cmp, patch; cal, tsort, units; awk (stage 6)
 nix build .#curl                  # /usr/bin/curl and static libcurl (stage 6)
 nix build .#bash .#zsh           # Apple shells at /bin/bash, /bin/sh and /bin/zsh
+nix build .#perl                 # Apple's Perl 5.34.1 and its standard library
 nix build .#ncursesTools          # clear, tput, tset/reset, infocmp, tic, toe (stage 6)
 nix build .#rootfs                 # assembled tree at real paths (/usr/lib/system, etc.)
 nix build .#rootfsRelease          # that tree as a release: tarball, manifest, spec, bundle
@@ -96,6 +97,7 @@ All files are reproducible, and can be verified 1:1 from the build workflow too.
 | `systemCmds` | Stage 6: the `system_cmds` tools a plain userland has: `sync`, `sysctl`, `getconf`, `dmesg`, `hostinfo`, `vm_stat`, `mkfile`, `nologin`, `wait4path`, `zdump`, `zic`, `ac`, `accton`, `sa`, `pwd_mkdb`. |
 | `patchCmds` / `miscCmds` / `awk` | Stage 6: `cmp`, `diff`, `diff3`, `diffstat`, `patch`, `sdiff`; `cal`, `ncal`, `calendar`, `tsort`, `units`; the one true `awk`. |
 | `bash` / `zsh` | Apple's Bash 3.2 at `/bin/bash` (also `/bin/sh`) and Zsh 5.9 at `/bin/zsh`, with their man pages and startup files. Zsh's modules are linked into its executable for the minimal rootfs. |
+| `perl` | Apple's `perl-175` source (`Perl 5.34.1`) at `/usr/bin/perl`, with its standard library under `/usr/lib/perl5/5.34` and a man page. XS modules are linked into the executable; compression, database, and syslog bindings need libraries absent from the current SDK and are omitted. |
 | `curl` | Apple's `curl-160` (`curl` 8.7.1) at `/usr/bin/curl`, with static `libcurl.a`, headers, and man pages. This build supports unencrypted protocols including HTTP and FTP. HTTPS requires a TLS backend that is not yet in the rootfs; DNS resolver imports remain declared against the absent `system_info` library. |
 | `ncursesTools` | Stage 6: ncurses' own executables -- `clear`, `tput`, `tset` (+ `reset`), `infocmp`, `tic` (+ `captoinfo`, `infotocap`), `toe` -- linked against libncurses. |
 | `rootfs` | The assembled tree at real paths with whole-tree checks (load commands resolve, no undeclared undefined symbols). Nothing runs yet - no `/usr/lib/dyld`. |
@@ -133,7 +135,7 @@ Not every `Libsystem/requiredlibs` entry is buildable from released source. Seve
 
 Each member's `allowUndefined` lists exactly which symbols it expects from absent libs - no blanket `dynamic_lookup`. `rootfs` checks that every undefined import is declared and every declaration is still needed.
 
-No `/usr/lib/dyld` yet (`libmach_o.a` builds; dyld link not started). Userland includes `bash`, `zsh`, the `shell_cmds`, `file_cmds`, `text_cmds`, `adv_cmds`, `basic_cmds`, `patch_cmds` and `misc_cmds` tools, the basic `system_cmds` ones, `awk`, and ncurses' tools, with libedit, libncurses, libutil, libmd and the terminfo database. There is no `vi`, `less`/`more`, `bc` or `file`, which are projects of their own. `wc`, `df`, `last`, `w`/`uptime` and `apply` are written against libxo or libsbuf, which Apple has not released. Imports from absent libraries are declared per tool, like the libsystem members' (`system_info` for user and group names, `system_m` for `awk`'s and `calendar`'s math, ...). No `launchd` - last open source was 2013 and depends on unreleased `libxpc`.
+No `/usr/lib/dyld` yet (`libmach_o.a` builds; dyld link not started). Userland includes `bash`, `zsh`, `perl`, the `shell_cmds`, `file_cmds`, `text_cmds`, `adv_cmds`, `basic_cmds`, `patch_cmds` and `misc_cmds` tools, the basic `system_cmds` ones, `awk`, and ncurses' tools, with libedit, libncurses, libutil, libmd and the terminfo database. There is no `vi`, `less`/`more` or `bc`. `wc`, `df`, `last`, `w`/`uptime` and `apply` are written against libxo or libsbuf, which Apple has not released. Imports from absent libraries are declared per tool, like the libsystem members' (`system_info` for user and group names, `system_m` for `awk`'s and `calendar`'s math, ...). No `launchd` - last open source was 2013 and depends on unreleased `libxpc`.
 
 ## Updating sources
 
