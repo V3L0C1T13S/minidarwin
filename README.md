@@ -1,6 +1,6 @@
 # minidarwin
 
-Pure, reproducible Nix bootstrap of a minimal Darwin userland from Apple's released sources, starting from a bare Clang. No Xcode, no `/Library/Developer`, no `apple-sdk` from nixpkgs. Every header and object comes from a content-addressed tarball pinned in [`lib/sources.nix`](lib/sources.nix).
+Pure, reproducible Nix bootstrap of a minimal Darwin userland from Apple's released sources, starting from bare Clang.
 
 ## Requirements
 
@@ -78,34 +78,6 @@ nix-build --check -A libsyscall   # after a full nix-build -A libsyscall
 ```
 
 All files are reproducible, and can be verified 1:1 from the build workflow too.
-
-## What you get
-
-| Output | Contents |
-|---|---|
-| `sdk` | ~1,720 headers - xnu, Libc, Libm, libpthread, libplatform, libmalloc, libdispatch, etc. - laid out like Apple's internal SDK: `usr/include` is xnu's `SPINCFRAME` rendering, and `System.framework/PrivateHeaders` holds the `SFPINCFRAME` renderings the libsystem members search first. |
-| `libsyscall` | `libsystem_kernel.dylib` - 1,561 exports, 639 objects, ad-hoc signed |
-| `libcxx` / `libunwind` / `libcxxabi` | LLVM runtimes as static archives (283 builtins objects + 1,677 libc++ headers) |
-| `libSystem` | Umbrella `libSystem.B.dylib` re-exporting 10 members under `/usr/lib/system` |
-| `libcxxDylib` / `libcxxabiDylib` | `/usr/lib/libc++.1.dylib` + `libc++abi.dylib` |
-| `sdkStage4` / `toolchainStage4` | The C++-linkable sysroot: stage 3 plus those two dylibs, so `-lc++` alone resolves `___dynamic_cast` and the `__cxxabiv1` type_info vtables. What `nix develop` gives you. |
-| `ncurses` / `libedit` | Stage 6: `/usr/lib/libncurses.5.4.dylib` and `/usr/lib/libedit.3.dylib` (plus their compatibility symlinks and libedit's man pages), from Apple's `ncurses` and `libedit` projects. What `ash` links for line editing. |
-| `terminfo` | Stage 6: `/usr/share/terminfo`, compiled from ncurses' `terminfo.src` by a `tic` built for the build machine, as ncurses' `run_tic.sh` does. All 2,684 entries are byte-identical to macOS 26's (aliases are separate files rather than hardlinks). |
-| `shellCmds` | Stage 6: every `shell_cmds` tool but `apply`, `su` and `w` -- `date`, `env`, `expr`, `find`, `id`, `kill`, `mktemp`, `printf`, `sleep`, `test`, `xargs`, ... -- at their real paths with their man pages, plus the `All` aggregate's hardlinks as symlinks (`[`, `groups`, `whoami`, `od`) and its `alias` script with the POSIX regular builtins (`cd`, `command`, `read`, `umask`, ...) linked to it. The Almquist shell is `/usr/local/bin/ash` (the `sh` target's own name and path; macOS's `/bin/sh` comes from `bash`), linked against libedit; `users` is C++. `nohup` is built without launchd's unreleased `<vproc.h>` (it does not detach from the console's bootstrap namespace). |
-| `libutil` / `fileCmds` | Stage 6: `/usr/lib/libutil.dylib` (+ `libutil1.0.dylib`, man pages in `/usr/local/share/man/man3`) and every `file_cmds` tool but `df`, `ipcs`, `gzip` and `mtree`: `ls`, `cp`, `mv`, `rm`, `rmdir`, `touch`, `chmod`, `chown`, `dd`, `install`, `pax`, `stat`, ..., plus the aggregates' names as symlinks (`readlink`, `chgrp`, `link`, `unlink`, `sum`, `uncompress`) and `shar`. libutil is built without `tzlink.c` (needs `<xpc/xpc.h>`) and `wipefs.cpp`/`ExtentManager.cpp` (need IOKit headers). `cp` cannot copy a regular file's contents until copyfile is built, and `rm -P` needs removefile. |
-| `libmd` / `textCmds` | Stage 6: `/usr/lib/libmd.dylib` and every `text_cmds` tool but `wc` and `jq`: `cat`, `cut`, `ed`, `grep` (+ `egrep`, `fgrep`, `zgrep`, ...), `head`, `sed`, `sort`, `tail`, `tr`, `uniq`, `md5` (+ `sha256sum`, ...), `base64`, ... `grep` is built without compressed input (liblzma was never released; zlib and bzip2 are not built). libmd's digests, and `sort -R`'s, are CommonCrypto's, whose header comes from its last release (CommonCrypto is closed source since). |
-| `advCmds` / `basicCmds` | Stage 6: `ps`, `stty`, `tty`, `locale` (C++), `tabs`, `finger`, `whois`, `gencat`, `lsvfs`, `cap_mkdb`; `mesg`, `write`. `ps` and `write` are installed without their set-id bits, which the rootfs format cannot express. |
-| `systemCmds` | Stage 6: the `system_cmds` tools a plain userland has: `sync`, `sysctl`, `getconf`, `dmesg`, `hostinfo`, `vm_stat`, `mkfile`, `nologin`, `wait4path`, `zdump`, `zic`, `ac`, `accton`, `sa`, `pwd_mkdb`. |
-| `patchCmds` / `miscCmds` / `awk` | Stage 6: `cmp`, `diff`, `diff3`, `diffstat`, `patch`, `sdiff`; `cal`, `ncal`, `calendar`, `tsort`, `units`; the one true `awk`. |
-| `bash` / `zsh` | Apple's Bash 3.2 at `/bin/bash` (also `/bin/sh`) and Zsh 5.9 at `/bin/zsh`, with their man pages and startup files. Zsh's modules are linked into its executable for the minimal rootfs. |
-| `perl` | Apple's `perl-175` source (`Perl 5.34.1`) at `/usr/bin/perl`, with its standard library under `/usr/lib/perl5/5.34` and a man page. XS modules are linked into the executable; compression, database, and syslog bindings need libraries absent from the current SDK and are omitted. |
-| `curl` | Apple's `curl-160` (`curl` 8.7.1) at `/usr/bin/curl`, with static `libcurl.a`, headers, and man pages. This build supports unencrypted protocols including HTTP and FTP. HTTPS requires a TLS backend that is not yet in the rootfs; DNS resolver imports remain declared against the absent `system_info` library. |
-| `openssl098` | Apple's last `OpenSSL098` release (`-85`, OpenSSL 0.9.8zh), built from `openssl.xcodeproj`'s source lists: `/usr/lib/libcrypto.0.9.8.dylib` and `libssl.0.9.8.dylib` (+ unversioned symlinks), `c_rehash`, and Apple's layout for the rest -- the `openssl` tool and deprecation-annotated headers under `/usr/local/openssl-0.9.8`, `openssl.cnf` and `misc/` under `/System/Library/OpenSSL`, pkg-config files and `*ssl` man pages. Certificate verification is upstream's: Apple's `x509_vfy_apple.c` needs the unreleased TrustEvaluationAgent. No zlib compression. Not on the macOS 26 train, and curl does not use it. |
-| `ncursesTools` | Stage 6: ncurses' own executables -- `clear`, `tput`, `tset` (+ `reset`), `infocmp`, `tic` (+ `captoinfo`, `infotocap`), `toe` -- linked against libncurses. |
-| `rootfs` | The assembled tree at real paths with whole-tree checks (load commands resolve, no undeclared undefined symbols). Nothing runs yet - no `/usr/lib/dyld`. |
-| `rootfsRelease` | `rootfs` packed for distribution: a reproducible `.tar.gz`, a `manifest.yaml` (type, mode and SHA-256 of every path, plus a Merkle tree digest), a `spec.yaml` pinning both, and a `.bundle.zip` of all three. |
-
-`sdkTest` asserts the include path is exactly clang's builtins, the sysroot's `usr/include` and its `System/Library/Frameworks`, that strict-POSIX code compiles against `usr/include`, and that `System.framework/PrivateHeaders` (and only it) gives the libsystem members xnu's private declarations. `runtimesTest` links C++ against the archives and checks 151 remaining undefs are all C. `libsystemTest` links a C program against `-lSystem` only. `cxxLinkTest` links a C++ program that downcasts, cross-casts through a virtual base, uses `typeid` and throws, against nothing but `-lc++`.
 
 ## Releases and verification
 

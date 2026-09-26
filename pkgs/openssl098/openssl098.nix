@@ -1,7 +1,8 @@
 # Apple's OpenSSL098-85 (OpenSSL 0.9.8zh), the last release of the legacy
 # libraries, built as openssl.xcodeproj's Release targets: crypto.0.9.8,
 # ssl.0.9.8 and openssl, plus the install aggregates' files. The project is
-# not part of the macOS 26 source set; nothing else on this train links it.
+# not part of the macOS 26 source set; curl links it for TLS, in place of
+# Apple's unreleased LibreSSL.
 #
 # Layout is Apple's, not upstream's: the dylibs in /usr/lib, but the openssl
 # tool and headers under /usr/local/openssl-0.9.8, and OPENSSLDIR (the
