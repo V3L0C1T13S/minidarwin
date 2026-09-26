@@ -3,8 +3,8 @@
 # the shell_cmds, file_cmds, text_cmds, adv_cmds, basic_cmds, system_cmds,
 # patch_cmds and misc_cmds tools, awk, file, curl, nano/pico, bash, Perl,
 # zsh, and ncurses' own; the libraries they
-# link (libedit, libncurses, libutil, libmd); and the terminfo database
-# libncurses reads. No dyld yet, so nothing runs.
+# link (libedit, libncurses, libutil, libmd); OpenSSL 0.9.8's libcrypto,
+# libssl and openssl tool; and the terminfo database libncurses reads. No dyld yet, so nothing runs.
 { lib
 , mkDarwinPackage
 , toolchain
@@ -29,6 +29,7 @@
 , awk
 , file
 , curl
+, openssl098
 , nano
 , bash
 , darwinPerl
@@ -38,12 +39,12 @@
 
 let
   cmds = [ shellCmds fileCmds textCmds advCmds basicCmds systemCmds patchCmds miscCmds awk file curl nano bash darwinPerl zsh ncursesTools ];
-  members = [ libSystem libsystemTree2 libcxxDylib libcxxabiDylib ncurses terminfo libedit libutil libmd ] ++ cmds;
+  members = [ libSystem libsystemTree2 libcxxDylib libcxxabiDylib ncurses terminfo libedit libutil libmd openssl098 ] ++ cmds;
 
   # Union of passthru.allowUndefined from all members.
   declared =
     lib.foldl' (acc: p: acc // (p.allowUndefined or { })) { }
-      (lib.attrValues libsystemPass2 ++ [ libcxxDylib libcxxabiDylib ncurses libedit libutil libmd ] ++ cmds);
+      (lib.attrValues libsystemPass2 ++ [ libcxxDylib libcxxabiDylib ncurses libedit libutil libmd openssl098 ] ++ cmds);
 
   # Runtime-provided (dyld defines in loaded process, not in a library).
   runtimeProvided = [ "dyld_stub_binder" ];

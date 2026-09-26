@@ -130,6 +130,12 @@ if [ "$changed" = 1 ]; then
     util pkgs/libutil/libutil-sources.nix
   gen_sources libmd libmd.xcodeproj/project.pbxproj \
     libmd pkgs/libmd/libmd-sources.nix
+  gen_sources OpenSSL098 openssl.xcodeproj/project.pbxproj \
+    crypto.0.9.8 pkgs/openssl098/libcrypto-sources.nix
+  gen_sources OpenSSL098 openssl.xcodeproj/project.pbxproj \
+    ssl.0.9.8 pkgs/openssl098/libssl-sources.nix
+  gen_sources OpenSSL098 openssl.xcodeproj/project.pbxproj \
+    openssl pkgs/openssl098/openssl-sources.nix
 
   # Stage 6: *_cmds projects, one attribute per tool target (pkgs/cmds/mk-cmds.nix).
   gen_cmds() { # <attr> <out> <target>...

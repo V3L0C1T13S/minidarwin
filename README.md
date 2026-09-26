@@ -31,6 +31,7 @@ nix build .#advCmds .#basicCmds    # ps, stty, tty, locale, ...; mesg, write (st
 nix build .#systemCmds            # sync, sysctl, getconf, dmesg, zic, ... (stage 6)
 nix build .#patchCmds .#miscCmds .#awk  # diff, cmp, patch; cal, tsort, units; awk (stage 6)
 nix build .#curl                  # /usr/bin/curl and static libcurl (stage 6)
+nix build .#openssl098            # libcrypto/libssl 0.9.8 and Apple's openssl tool (stage 6)
 nix build .#bash .#zsh           # Apple shells at /bin/bash, /bin/sh and /bin/zsh
 nix build .#perl                 # Apple's Perl 5.34.1 and its standard library
 nix build .#ncursesTools          # clear, tput, tset/reset, infocmp, tic, toe (stage 6)
@@ -99,6 +100,7 @@ All files are reproducible, and can be verified 1:1 from the build workflow too.
 | `bash` / `zsh` | Apple's Bash 3.2 at `/bin/bash` (also `/bin/sh`) and Zsh 5.9 at `/bin/zsh`, with their man pages and startup files. Zsh's modules are linked into its executable for the minimal rootfs. |
 | `perl` | Apple's `perl-175` source (`Perl 5.34.1`) at `/usr/bin/perl`, with its standard library under `/usr/lib/perl5/5.34` and a man page. XS modules are linked into the executable; compression, database, and syslog bindings need libraries absent from the current SDK and are omitted. |
 | `curl` | Apple's `curl-160` (`curl` 8.7.1) at `/usr/bin/curl`, with static `libcurl.a`, headers, and man pages. This build supports unencrypted protocols including HTTP and FTP. HTTPS requires a TLS backend that is not yet in the rootfs; DNS resolver imports remain declared against the absent `system_info` library. |
+| `openssl098` | Apple's last `OpenSSL098` release (`-85`, OpenSSL 0.9.8zh), built from `openssl.xcodeproj`'s source lists: `/usr/lib/libcrypto.0.9.8.dylib` and `libssl.0.9.8.dylib` (+ unversioned symlinks), `c_rehash`, and Apple's layout for the rest -- the `openssl` tool and deprecation-annotated headers under `/usr/local/openssl-0.9.8`, `openssl.cnf` and `misc/` under `/System/Library/OpenSSL`, pkg-config files and `*ssl` man pages. Certificate verification is upstream's: Apple's `x509_vfy_apple.c` needs the unreleased TrustEvaluationAgent. No zlib compression. Not on the macOS 26 train, and curl does not use it. |
 | `ncursesTools` | Stage 6: ncurses' own executables -- `clear`, `tput`, `tset` (+ `reset`), `infocmp`, `tic` (+ `captoinfo`, `infotocap`), `toe` -- linked against libncurses. |
 | `rootfs` | The assembled tree at real paths with whole-tree checks (load commands resolve, no undeclared undefined symbols). Nothing runs yet - no `/usr/lib/dyld`. |
 | `rootfsRelease` | `rootfs` packed for distribution: a reproducible `.tar.gz`, a `manifest.yaml` (type, mode and SHA-256 of every path, plus a Merkle tree digest), a `spec.yaml` pinning both, and a `.bundle.zip` of all three. |
@@ -135,7 +137,7 @@ Not every `Libsystem/requiredlibs` entry is buildable from released source. Seve
 
 Each member's `allowUndefined` lists exactly which symbols it expects from absent libs - no blanket `dynamic_lookup`. `rootfs` checks that every undefined import is declared and every declaration is still needed.
 
-No `/usr/lib/dyld` yet (`libmach_o.a` builds; dyld link not started). Userland includes `bash`, `zsh`, `perl`, the `shell_cmds`, `file_cmds`, `text_cmds`, `adv_cmds`, `basic_cmds`, `patch_cmds` and `misc_cmds` tools, the basic `system_cmds` ones, `awk`, and ncurses' tools, with libedit, libncurses, libutil, libmd and the terminfo database. There is no `vi`, `less`/`more` or `bc`. `wc`, `df`, `last`, `w`/`uptime` and `apply` are written against libxo or libsbuf, which Apple has not released. Imports from absent libraries are declared per tool, like the libsystem members' (`system_info` for user and group names, `system_m` for `awk`'s and `calendar`'s math, ...). No `launchd` - last open source was 2013 and depends on unreleased `libxpc`.
+No `/usr/lib/dyld` yet (`libmach_o.a` builds; dyld link not started). Userland includes `bash`, `zsh`, `perl`, the `shell_cmds`, `file_cmds`, `text_cmds`, `adv_cmds`, `basic_cmds`, `patch_cmds` and `misc_cmds` tools, the basic `system_cmds` ones, `awk`, and ncurses' tools, with libedit, libncurses, libutil, libmd, the legacy OpenSSL 0.9.8 libraries and the terminfo database. There is no `vi`, `less`/`more` or `bc`. `wc`, `df`, `last`, `w`/`uptime` and `apply` are written against libxo or libsbuf, which Apple has not released. Imports from absent libraries are declared per tool, like the libsystem members' (`system_info` for user and group names, `system_m` for `awk`'s and `calendar`'s math, ...). No `launchd` - last open source was 2013 and depends on unreleased `libxpc`.
 
 ## Updating sources
 

@@ -62,6 +62,7 @@
             awk
             file
             curl
+            openssl098
             nano
             bash
             zsh

@@ -344,6 +344,10 @@ lib.makeScope pkgs.newScope (self: with self; {
     toolchain = toolchainStage3;
   };
 
+  openssl098 = callPackage ./pkgs/openssl098/openssl098.nix {
+    toolchain = toolchainStage3;
+  };
+
   # Apple's nano editor, installed as /usr/bin/pico with a nano alias.
   nano = callPackage ./pkgs/nano/nano.nix {
     toolchain = toolchainStage3;
