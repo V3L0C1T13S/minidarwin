@@ -32,6 +32,7 @@ nix build .#systemCmds            # sync, sysctl, getconf, dmesg, zic, ... (stag
 nix build .#patchCmds .#miscCmds .#awk  # diff, cmp, patch; cal, tsort, units; awk (stage 6)
 nix build .#curl                  # /usr/bin/curl and static libcurl (stage 6)
 nix build .#openssl098            # libcrypto/libssl 0.9.8 and Apple's openssl tool (stage 6)
+nix build .#certPem               # /etc/ssl/cert.pem from security_certificates' roots (stage 6)
 nix build .#bash .#zsh           # Apple shells at /bin/bash, /bin/sh and /bin/zsh
 nix build .#perl                 # Apple's Perl 5.34.1 and its standard library
 nix build .#ncursesTools          # clear, tput, tset/reset, infocmp, tic, toe (stage 6)

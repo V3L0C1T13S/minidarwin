@@ -48,6 +48,7 @@
             toolchainStage4
             ncurses
             terminfo
+            certPem
             libedit
             shellCmds
             libutil

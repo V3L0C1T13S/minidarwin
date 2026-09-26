@@ -63,6 +63,10 @@ in
   CommonCrypto = apple "CommonCrypto" "CommonCrypto-600035"
     "sha256-+qAwL6+s7di9cX/qXtapLkjCFoDuZaSYltRJEG4qekM=";
 
+  # The root store; only its certificate files are used, for /etc/ssl/cert.pem.
+  security_certificates = apple "security_certificates" "security_certificates-55349.120.10"
+    "sha256-i+CRO4xidBMy3rXbe1wNTQSDOWNa0vJhDl76i3emCh8=";
+
   cctools = apple "cctools" "cctools-1035.1.102"
     "sha256-/2yIOHOxmgtwkaE/XOf5jk+iO3B4gnxXq8V/+qb+Wwg=";
 

@@ -4,7 +4,8 @@
 # patch_cmds and misc_cmds tools, awk, file, curl, nano/pico, bash, Perl,
 # zsh, and ncurses' own; the libraries they
 # link (libedit, libncurses, libutil, libmd); OpenSSL 0.9.8's libcrypto,
-# libssl and openssl tool; and the terminfo database libncurses reads. No dyld yet, so nothing runs.
+# libssl and openssl tool; the terminfo database libncurses reads; and the
+# CA bundle curl reads, /etc/ssl/cert.pem. No dyld yet, so nothing runs.
 { lib
 , mkDarwinPackage
 , toolchain
@@ -15,6 +16,7 @@
 , libcxxabiDylib
 , ncurses
 , terminfo
+, certPem
 , libedit
 , shellCmds
 , libutil
@@ -39,7 +41,7 @@
 
 let
   cmds = [ shellCmds fileCmds textCmds advCmds basicCmds systemCmds patchCmds miscCmds awk file curl nano bash darwinPerl zsh ncursesTools ];
-  members = [ libSystem libsystemTree2 libcxxDylib libcxxabiDylib ncurses terminfo libedit libutil libmd openssl098 ] ++ cmds;
+  members = [ libSystem libsystemTree2 libcxxDylib libcxxabiDylib ncurses terminfo certPem libedit libutil libmd openssl098 ] ++ cmds;
 
   # Union of passthru.allowUndefined from all members.
   declared =
@@ -75,6 +77,13 @@ mkDarwinPackage {
       cp -R $pkg/. $out/
       chmod -R u+w $out
     done
+    # As on macOS, /etc is private/etc, which is where members install.
+    if [ -e $out/etc ]; then
+      echo "rootfs: /etc must be the private/etc link, not installed into" >&2
+      exit 1
+    fi
+    ln -s private/etc $out/etc
+    [ -s $out/etc/ssl/cert.pem ] || { echo "rootfs: no /etc/ssl/cert.pem" >&2; exit 1; }
     # Keep the exec bit: the release maps it to 0755 vs 0644 (man pages).
     find $out -type d -exec chmod 755 {} +
     find $out -type f -perm -u+x -exec chmod 755 {} +

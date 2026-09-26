@@ -34,7 +34,7 @@ mkCmds {
   ldflags = [ "-Wl,-dead_strip" ];
 
   extraInstall = ''
-    install -Dm644 nanorc $out/etc/nanorc
+    install -Dm644 nanorc $out/private/etc/nanorc
     install -Dm644 doc/nanorc.5 $out/usr/share/man/man5/nanorc.5
   '';
 }

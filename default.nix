@@ -264,6 +264,8 @@ lib.makeScope pkgs.newScope (self: with self; {
   ncursesGenerated = callPackage ./pkgs/ncurses/ncurses-generated.nix { };
   ncursesTic = callPackage ./pkgs/ncurses/tic.nix { };
   terminfo = callPackage ./pkgs/ncurses/terminfo.nix { };
+  # /etc/ssl/cert.pem, from the macOS root store (curl's CA bundle).
+  certPem = callPackage ./pkgs/security-certificates/cert-pem.nix { };
   # clear, tput, tset, ... (ncurses.xcodeproj's executables).
   ncursesTools = callPackage ./pkgs/ncurses/ncurses-tools.nix {
     toolchain = toolchainStage3;
