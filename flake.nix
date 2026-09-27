@@ -63,6 +63,7 @@
             awk
             file
             curl
+            zlib
             libressl
             openssl098
             nano

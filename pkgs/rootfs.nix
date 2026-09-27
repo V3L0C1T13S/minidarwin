@@ -3,7 +3,7 @@
 # the shell_cmds, file_cmds, text_cmds, adv_cmds, basic_cmds, system_cmds,
 # patch_cmds and misc_cmds tools, awk, file, curl, nano/pico, bash, Perl,
 # zsh, and ncurses' own; the libraries they
-# link (libedit, libncurses, libutil, libmd); LibreSSL as primary TLS and a
+# link (libedit, libncurses, libutil, libmd, libz); LibreSSL as primary TLS and a
 # complete OpenSSL 0.9.8 install under /compat/OS X/10.7; terminfo; and the
 # CA bundle curl reads, /etc/ssl/cert.pem. No dyld yet, so nothing runs.
 { lib
@@ -31,6 +31,7 @@
 , awk
 , file
 , curl
+, zlib
 , libressl
 , openssl098
 , nano
@@ -42,7 +43,7 @@
 
 let
   cmds = [ shellCmds fileCmds textCmds advCmds basicCmds systemCmds patchCmds miscCmds awk file curl nano bash darwinPerl zsh ncursesTools ];
-  members = [ libSystem libsystemTree2 libcxxDylib libcxxabiDylib ncurses terminfo certPem libedit libutil libmd libressl openssl098 ] ++ cmds;
+  members = [ libSystem libsystemTree2 libcxxDylib libcxxabiDylib ncurses terminfo certPem libedit libutil libmd zlib libressl openssl098 ] ++ cmds;
 
   # Union of passthru.allowUndefined from all members.
   declared =
@@ -87,6 +88,9 @@ mkDarwinPackage {
     [ -s $out/etc/ssl/cert.pem ] || { echo "rootfs: no /etc/ssl/cert.pem" >&2; exit 1; }
     for f in /usr/lib/libcrypto.dylib /usr/lib/libssl.dylib /usr/bin/openssl; do
       [ -e "$out$f" ] || { echo "rootfs: missing primary TLS file $f" >&2; exit 1; }
+    done
+    for f in /usr/lib/libz.1.dylib /usr/lib/libz.dylib /usr/include/zlib.h; do
+      [ -e "$out$f" ] || { echo "rootfs: missing zlib file $f" >&2; exit 1; }
     done
     for f in /usr/lib/libcrypto.0.9.8.dylib /usr/lib/libssl.0.9.8.dylib \
       /usr/local/openssl-0.9.8 /System/Library/OpenSSL; do

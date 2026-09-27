@@ -96,6 +96,8 @@ in
     "sha256-Je5ezH0g2bu/ccExJyKlOdt0LJn3DqUNnX3MybCm4iI=";
   curl = apple "curl" "curl-160"
     "sha256-fUFOM7WuF2TnmQcdq4H0oOxdg26XvyjzaZq94e511zs=";
+  zlib = apple "zlib" "zlib-100"
+    "sha256-EAlHKSdWHRbz6F1CjH+jubyEQehSmxE37Ua0iQ4ApcQ=";
   # Apple does not publish its LibreSSL source. Use the portable upstream release.
   libressl = fetchurl {
     url = "https://ftp.openbsd.org/pub/OpenBSD/LibreSSL/libressl-4.3.2.tar.gz";

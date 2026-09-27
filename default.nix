@@ -346,6 +346,10 @@ lib.makeScope pkgs.newScope (self: with self; {
     toolchain = toolchainStage3;
   };
 
+  zlib = callPackage ./pkgs/zlib/zlib.nix {
+    toolchain = toolchainStage3;
+  };
+
   libressl = callPackage ./pkgs/libressl/libressl.nix {
     toolchain = toolchainStage3;
   };
