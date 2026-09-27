@@ -23,7 +23,7 @@ lib.makeScope pkgs.newScope (self: with self; {
 
   inherit llvmPackages targetArch minOS;
 
-  sources = import ./lib/sources.nix { inherit (pkgs) fetchFromGitHub; };
+  sources = import ./lib/sources.nix { inherit (pkgs) fetchFromGitHub fetchurl; };
 
   buildSupport = ./lib/build-support.sh;
 
@@ -343,6 +343,10 @@ lib.makeScope pkgs.newScope (self: with self; {
   };
 
   curl = callPackage ./pkgs/curl/curl.nix {
+    toolchain = toolchainStage3;
+  };
+
+  libressl = callPackage ./pkgs/libressl/libressl.nix {
     toolchain = toolchainStage3;
   };
 

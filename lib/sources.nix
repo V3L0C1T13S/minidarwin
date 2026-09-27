@@ -1,5 +1,6 @@
-# Pinned Apple releases (content-addressed). All from macOS 26 release (xnu-12377); don't mix.
-{ fetchFromGitHub }:
+# Content-addressed sources. Apple pins follow the macOS 26 / xnu-12377 set
+# except for explicitly noted legacy projects; LibreSSL is pinned upstream.
+{ fetchFromGitHub, fetchurl }:
 
 let
   apple = repo: rev: hash:
@@ -95,6 +96,11 @@ in
     "sha256-Je5ezH0g2bu/ccExJyKlOdt0LJn3DqUNnX3MybCm4iI=";
   curl = apple "curl" "curl-160"
     "sha256-fUFOM7WuF2TnmQcdq4H0oOxdg26XvyjzaZq94e511zs=";
+  # Apple does not publish its LibreSSL source. Use the portable upstream release.
+  libressl = fetchurl {
+    url = "https://ftp.openbsd.org/pub/OpenBSD/LibreSSL/libressl-4.3.2.tar.gz";
+    hash = "sha256-7fAa7iTGXWnmqe/LnUS82mgv+dTzu72V55Th36kIR7U=";
+  };
   # Last Apple release of the legacy 0.9.8 libraries; outside the macOS 26 train.
   OpenSSL098 = apple "OpenSSL098" "OpenSSL098-85"
     "sha256-2cq99/hbCuK9vV3MOQQ/XXrPgkoSWBtevhrobLHBEdA=";

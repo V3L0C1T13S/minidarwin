@@ -32,7 +32,8 @@ let
 
   # Every pinned Apple source, with the hash that pins it: the whole OS train,
   # not only what this tree happens to use so far.
-  appleSources = lib.mapAttrsToList (n: s: "${n}=${s.rev}=${s.outputHash}") sources;
+  appleSources = lib.mapAttrsToList (n: s: "${n}=${s.rev}=${s.outputHash}")
+    (lib.filterAttrs (_: s: s ? rev) sources);
 in
 
 stdenvNoCC.mkDerivation {

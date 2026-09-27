@@ -30,8 +30,9 @@ nix build .#libmd .#textCmds      # libmd.dylib; cat, grep, sed, sort, head, tai
 nix build .#advCmds .#basicCmds    # ps, stty, tty, locale, ...; mesg, write (stage 6)
 nix build .#systemCmds            # sync, sysctl, getconf, dmesg, zic, ... (stage 6)
 nix build .#patchCmds .#miscCmds .#awk  # diff, cmp, patch; cal, tsort, units; awk (stage 6)
-nix build .#curl                  # /usr/bin/curl and static libcurl (stage 6)
-nix build .#openssl098            # libcrypto/libssl 0.9.8 and Apple's openssl tool (stage 6)
+nix build .#libressl              # primary TLS libraries and /usr/bin/openssl (stage 6)
+nix build .#curl                  # /usr/bin/curl and static libcurl, linked to LibreSSL (stage 6)
+nix build .#openssl098            # OpenSSL 0.9.8 under /compat/OS X/10.7 (stage 6)
 nix build .#certPem               # /etc/ssl/cert.pem from security_certificates' roots (stage 6)
 nix build .#bash .#zsh           # Apple shells at /bin/bash, /bin/sh and /bin/zsh
 nix build .#perl                 # Apple's Perl 5.34.1 and its standard library
@@ -110,7 +111,9 @@ Not every `Libsystem/requiredlibs` entry is buildable from released source. Seve
 
 Each member's `allowUndefined` lists exactly which symbols it expects from absent libs - no blanket `dynamic_lookup`. `rootfs` checks that every undefined import is declared and every declaration is still needed.
 
-No `/usr/lib/dyld` yet (`libmach_o.a` builds; dyld link not started). Userland includes `bash`, `zsh`, `perl`, the `shell_cmds`, `file_cmds`, `text_cmds`, `adv_cmds`, `basic_cmds`, `patch_cmds` and `misc_cmds` tools, the basic `system_cmds` ones, `awk`, and ncurses' tools, with libedit, libncurses, libutil, libmd, the legacy OpenSSL 0.9.8 libraries and the terminfo database. There is no `vi`, `less`/`more` or `bc`. `wc`, `df`, `last`, `w`/`uptime` and `apply` are written against libxo or libsbuf, which Apple has not released. Imports from absent libraries are declared per tool, like the libsystem members' (`system_info` for user and group names, `system_m` for `awk`'s and `calendar`'s math, ...). No `launchd` - last open source was 2013 and depends on unreleased `libxpc`.
+LibreSSL Portable 4.3.2 supplies the primary `libcrypto`/`libssl` and `openssl` tool. Curl links LibreSSL. Apple's OpenSSL 0.9.8 build remains available as `.#openssl098`, but its complete install and dylib install names live under `/compat/OS X/10.7`; primary binaries do not link it. Apple does not publish the LibreSSL source used by macOS, so MiniDarwin pins the portable upstream release.
+
+No `/usr/lib/dyld` yet (`libmach_o.a` builds; dyld link not started). Userland includes `bash`, `zsh`, `perl`, the `shell_cmds`, `file_cmds`, `text_cmds`, `adv_cmds`, `basic_cmds`, `patch_cmds` and `misc_cmds` tools, the basic `system_cmds` ones, `awk`, and ncurses' tools, with libedit, libncurses, libutil, libmd, LibreSSL, isolated legacy OpenSSL 0.9.8 and the terminfo database. There is no `vi`, `less`/`more` or `bc`. `wc`, `df`, `last`, `w`/`uptime` and `apply` are written against libxo or libsbuf, which Apple has not released. Imports from absent libraries are declared per tool, like the libsystem members' (`system_info` for user and group names, `system_m` for `awk`'s and `calendar`'s math, ...). No `launchd` - last open source was 2013 and depends on unreleased `libxpc`.
 
 ## Updating sources
 

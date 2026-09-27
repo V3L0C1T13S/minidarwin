@@ -3,8 +3,8 @@
 # the shell_cmds, file_cmds, text_cmds, adv_cmds, basic_cmds, system_cmds,
 # patch_cmds and misc_cmds tools, awk, file, curl, nano/pico, bash, Perl,
 # zsh, and ncurses' own; the libraries they
-# link (libedit, libncurses, libutil, libmd); OpenSSL 0.9.8's libcrypto,
-# libssl and openssl tool; the terminfo database libncurses reads; and the
+# link (libedit, libncurses, libutil, libmd); LibreSSL as primary TLS and a
+# complete OpenSSL 0.9.8 install under /compat/OS X/10.7; terminfo; and the
 # CA bundle curl reads, /etc/ssl/cert.pem. No dyld yet, so nothing runs.
 { lib
 , mkDarwinPackage
@@ -31,6 +31,7 @@
 , awk
 , file
 , curl
+, libressl
 , openssl098
 , nano
 , bash
@@ -41,12 +42,12 @@
 
 let
   cmds = [ shellCmds fileCmds textCmds advCmds basicCmds systemCmds patchCmds miscCmds awk file curl nano bash darwinPerl zsh ncursesTools ];
-  members = [ libSystem libsystemTree2 libcxxDylib libcxxabiDylib ncurses terminfo certPem libedit libutil libmd openssl098 ] ++ cmds;
+  members = [ libSystem libsystemTree2 libcxxDylib libcxxabiDylib ncurses terminfo certPem libedit libutil libmd libressl openssl098 ] ++ cmds;
 
   # Union of passthru.allowUndefined from all members.
   declared =
     lib.foldl' (acc: p: acc // (p.allowUndefined or { })) { }
-      (lib.attrValues libsystemPass2 ++ [ libcxxDylib libcxxabiDylib ncurses libedit libutil libmd openssl098 ] ++ cmds);
+      (lib.attrValues libsystemPass2 ++ [ libcxxDylib libcxxabiDylib ncurses libedit libutil libmd libressl openssl098 ] ++ cmds);
 
   # Runtime-provided (dyld defines in loaded process, not in a library).
   runtimeProvided = [ "dyld_stub_binder" ];
@@ -84,6 +85,15 @@ mkDarwinPackage {
     fi
     ln -s private/etc $out/etc
     [ -s $out/etc/ssl/cert.pem ] || { echo "rootfs: no /etc/ssl/cert.pem" >&2; exit 1; }
+    for f in /usr/lib/libcrypto.dylib /usr/lib/libssl.dylib /usr/bin/openssl; do
+      [ -e "$out$f" ] || { echo "rootfs: missing primary TLS file $f" >&2; exit 1; }
+    done
+    for f in /usr/lib/libcrypto.0.9.8.dylib /usr/lib/libssl.0.9.8.dylib \
+      /usr/local/openssl-0.9.8 /System/Library/OpenSSL; do
+      [ ! -e "$out$f" ] || { echo "rootfs: legacy OpenSSL escaped compatibility prefix: $f" >&2; exit 1; }
+    done
+    [ -e "$out/compat/OS X/10.7/usr/lib/libcrypto.0.9.8.dylib" ] || {
+      echo "rootfs: missing isolated OpenSSL 0.9.8" >&2; exit 1; }
     # Keep the exec bit: the release maps it to 0755 vs 0644 (man pages).
     find $out -type d -exec chmod 755 {} +
     find $out -type f -perm -u+x -exec chmod 755 {} +
@@ -112,10 +122,16 @@ mkDarwinPackage {
         echo "== every dependency must be inside the rootfs"
         fail=0
         while IFS= read -r rel; do
-          $OTOOL -L "$out/$rel" | tail -n +2 | awk '{ print $1 }' | sort -u |
+          $OTOOL -L "$out/$rel" | tail -n +2 | sed -E 's/^[[:space:]]*//; s/[[:space:]]+\(compatibility version.*$//' | sort -u |
           while IFS= read -r dep; do
             # Skip LC_ID_DYLIB (library's own install name).
             [ "$dep" = "$rel" ] && continue
+            case "$rel:$dep" in
+              /compat/OS\ X/10.7/*:*) ;;
+              *:/compat/OS\ X/10.7/*)
+                echo "$rel -> $dep (primary member links compatibility TLS)"
+                continue ;;
+            esac
             [ -e "$out$dep" ] || echo "$rel -> $dep"
           done
         done < $TMPDIR/machos.txt > $TMPDIR/dangling.txt

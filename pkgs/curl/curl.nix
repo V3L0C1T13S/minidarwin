@@ -1,14 +1,10 @@
-# curl-160 from the macOS 26 source set. TLS is OpenSSL 0.9.8 (openssl098):
-# Apple's build uses its internal LibreSSL plus Secure Transport, neither of
-# which is released. The SDK has no zlib, libpsl or GSSAPI.
-#
-# OpenSSL 0.9.8 speaks SSLv3 and TLS 1.0 only -- no TLS 1.1/1.2, SNI-based
-# ALPN or HTTP/2 -- so many current HTTPS servers will refuse the handshake.
-{ lib, mkDarwinPackage, sources, toolchain, gnumake, perl, openssl098 }:
+# curl-160 from the macOS 26 source set. Like Apple's build, it uses LibreSSL
+# for TLS; Secure Transport is not yet in MiniDarwin. No zlib, libpsl or GSSAPI.
+{ lib, mkDarwinPackage, sources, toolchain, gnumake, perl, libressl }:
 
 let
-  sslInclude = "${openssl098}/usr/local/openssl-0.9.8/include";
-  sslLib = "${openssl098}/usr/lib";
+  sslInclude = "${libressl}/usr/local/libressl/include";
+  sslLib = "${libressl}/usr/lib";
 
   allowUndefined = {
     "_gethostbyname" = "system_info";
@@ -84,19 +80,25 @@ mkDarwinPackage {
     # curl-config exposes the configure-time compiler path in --cc and
     # --configure. It must describe the target tool, not the Nix store input.
     substituteInPlace $out/usr/bin/curl-config --replace-fail "$CC" cc
-    # Likewise the OpenSSL search paths: on the target the headers are in
-    # /usr/local/openssl-0.9.8/include and the dylibs in /usr/lib.
+    # Replace build-time LibreSSL search paths with their target paths.
     for f in $out/usr/bin/curl-config $out/usr/lib/pkgconfig/libcurl.pc $out/usr/lib/libcurl.la; do
       substituteInPlace $f \
-        --replace-quiet "-I${sslInclude}" "-I/usr/local/openssl-0.9.8/include" \
+        --replace-quiet "-I${sslInclude}" "-I/usr/local/libressl/include" \
         --replace-quiet "-L${sslLib}" "-L/usr/lib"
     done
-    if grep -rlF ${openssl098} $out; then
-      echo "curl: store path of openssl098 leaked into the output" >&2
+    if grep -rlF ${libressl} $out; then
+      echo "curl: store path of LibreSSL leaked into the output" >&2
       exit 1
     fi
+    if grep -rlE 'lib(crypto|ssl)\.0\.9\.8|openssl-0\.9\.8' $out; then
+      echo "curl: legacy OpenSSL reference leaked into the output" >&2
+      exit 1
+    fi
+    cryptoName=$($OTOOL -D ${libressl}/usr/lib/libcrypto.dylib | tail -n 1)
+    sslName=$($OTOOL -D ${libressl}/usr/lib/libssl.dylib | tail -n 1)
     deps=$($OTOOL -L $out/usr/bin/curl | tail -n +2 | awk '{ print $1 }' | sort | tr '\n' ' ')
-    if [ "$deps" != "/usr/lib/libSystem.B.dylib /usr/lib/libcrypto.0.9.8.dylib /usr/lib/libssl.0.9.8.dylib " ]; then
+    expected=$(printf '%s\n' /usr/lib/libSystem.B.dylib "$cryptoName" "$sslName" | sort | tr '\n' ' ')
+    if [ "$deps" != "$expected" ]; then
       echo "curl: unexpected load commands: $deps" >&2
       exit 1
     fi
@@ -105,5 +107,5 @@ mkDarwinPackage {
     runHook postInstall
   '';
 
-  meta.description = "Apple's curl and static libcurl, with OpenSSL 0.9.8 for TLS";
+  meta.description = "Apple's curl and static libcurl, with LibreSSL for TLS";
 }

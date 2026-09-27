@@ -160,7 +160,9 @@ entries:
   `x86_64` (the Nix `targetArch`, not the Mach-O `arm64`).
 * **`build`** is optional provenance. It lists the LLVM version, and every
   pinned Apple source with the Nix hash that pins it. This is the whole OS
-  train, including sources the tree does not use yet.
+  train, including sources the tree does not use yet. The separately pinned
+  upstream LibreSSL source is in `lib/sources.nix`; `apple_sources` contains
+  only Apple projects.
 * **`summary`** is derived from `entries` and checked against them.
 
 ### Entries
