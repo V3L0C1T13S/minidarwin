@@ -17,6 +17,8 @@
 , ncurses
 , libmd
 , commonCryptoHeaders
+, copyfile
+, removefile
 }:
 
 let
@@ -68,16 +70,7 @@ let
     };
     cp = {
       installDir = "/bin";
-      # Regular files are copied by fcopyfile() (data, then xattrs and ACLs
-      # by copyfile's state), so without libcopyfile cp can make only
-      # directories, links and special files.
-      allowUndefined = {
-        "_copyfile_state_alloc" = "copyfile";
-        "_copyfile_state_free" = "copyfile";
-        "_copyfile_state_get" = "copyfile";
-        "_copyfile_state_set" = "copyfile";
-        "_fcopyfile" = "copyfile";
-      };
+      libraries = [{ pkg = copyfile; l = "copyfile"; }];
     };
     dd = {
       installDir = "/bin";
@@ -86,14 +79,16 @@ let
     du = { libraries = [{ pkg = libutil; l = "util"; }]; };
     install = {
       # Frameworks phase: libmd.tbd, for -M's digests.
-      libraries = [{ pkg = libmd; l = "md"; }];
+      libraries = [
+        { pkg = libmd; l = "md"; }
+        { pkg = copyfile; l = "copyfile"; }
+      ];
       cflags = [ "-I${commonCryptoHeaders}/usr/include" ]; # libmd's headers include it
       allowUndefined = lib.genAttrs
         (lib.concatMap (d: [ "_CC_${d}_Init" "_CC_${d}_Update" ]) [ "SHA1" "SHA256" "SHA512" ])
         (_: "commonCrypto") # libmd's #defines, as for md5 (text_cmds)
       // {
         "_environ" = "dyld"; # -s runs strip(1) with it; see shell_cmds' find
-        "_fcopyfile" = "copyfile"; # the copied file's metadata, as for cp
         # -o, -g: owner and group by name.
         "_getgrnam" = "system_info";
         "_getpwnam" = "system_info";
@@ -136,10 +131,8 @@ let
     };
     mv = {
       installDir = "/bin";
+      libraries = [{ pkg = copyfile; l = "copyfile"; }];
       allowUndefined = {
-        # Across file systems, fastcopy() copies the data itself, then
-        # fcopyfile() the ACL and xattrs.
-        "_fcopyfile" = "copyfile";
         # The prompt before overwriting a target it cannot write names its
         # owner and group.
         "_group_from_gid" = "system_info";
@@ -149,10 +142,8 @@ let
     pathchk = { };
     pax = {
       installDir = "/bin";
+      libraries = [{ pkg = copyfile; l = "copyfile"; }];
       allowUndefined = {
-        # Extracted files' xattrs and ACLs (Apple's ._ AppleDouble members).
-        "_copyfile" = "copyfile";
-        "_fcopyfile" = "copyfile";
         # Archive members' owner and group names, both ways (cache.c).
         "_endgrent" = "system_info";
         "_endpwent" = "system_info";
@@ -166,13 +157,13 @@ let
     };
     rm = {
       installDir = "/bin";
+      libraries = [{ pkg = removefile; l = "removefile"; }];
       man = {
         "rm/rm.1" = "/usr/share/man/man1/rm.1";
         "rm/unlink.1" = "/usr/share/man/man1/unlink.1"; # the unlink aggregate's
       };
       links."/bin/unlink" = "/bin/rm";
       allowUndefined = {
-        "_removefile" = "removefile"; # -P overwrites, then unlinks
         # The prompt before removing a file it cannot write.
         "_group_from_gid" = "system_info";
         "_user_from_uid" = "system_info";
@@ -197,7 +188,10 @@ let
       cflags = modernCflags;
       libraries = [{ pkg = libutil; l = "util"; }]; # OTHER_LDFLAGS = -lutil
     };
-    xattr = { cflags = modernCflags; };
+    xattr = {
+      cflags = modernCflags;
+      libraries = [{ pkg = copyfile; l = "copyfile"; }];
+    };
   };
 in
 

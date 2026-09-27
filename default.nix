@@ -241,6 +241,14 @@ lib.makeScope pkgs.newScope (self: with self; {
     toolchain = toolchainStage3;
   };
 
+  # copyfile(3) and removefile(3), used by file_cmds and shipped in the SDK.
+  copyfile = callPackage ./pkgs/copyfile.nix {
+    toolchain = toolchainStage3;
+  };
+  removefile = callPackage ./pkgs/removefile.nix {
+    toolchain = toolchainStage3;
+  };
+
   # First sysroot that links C++: -lc++ resolves libc++.dylib, whose reexport of
   # libc++abi.dylib supplies ___dynamic_cast and the __cxxabiv1 vtables.
   sdkStage4 = callPackage ./pkgs/sdk-stage4.nix { };

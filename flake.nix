@@ -44,6 +44,8 @@
             libmachO
             libcxxabiDylib
             libcxxDylib
+            copyfile
+            removefile
             sdkStage4
             toolchainStage4
             ncurses

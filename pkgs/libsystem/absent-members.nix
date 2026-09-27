@@ -23,8 +23,8 @@
   system_notify = "libnotify needs xpc and bootstrap";
   system_darwin = "libdarwin needs xpc and bootstrap";
   dispatch = "libdispatch needs the work_interval instance API";
-  copyfile = "copyfile needs xpc and quarantine";
-  removefile = "not built yet";
+  copyfile = "packaged standalone; not linked into the libSystem member tree";
+  removefile = "packaged standalone; not linked into the libSystem member tree";
   # Later stages.
   dyld = "stage 5";
 }

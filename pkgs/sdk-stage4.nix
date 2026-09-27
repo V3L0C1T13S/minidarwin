@@ -9,6 +9,8 @@
 , sdkStage3
 , libcxxDylib
 , libcxxabiDylib
+, copyfile
+, removefile
 }:
 
 stdenvNoCC.mkDerivation {
@@ -24,7 +26,7 @@ stdenvNoCC.mkDerivation {
     cp -R ${sdkStage3} $out
     chmod -R u+w $out
 
-    for pkg in ${libcxxabiDylib} ${libcxxDylib}; do
+    for pkg in ${libcxxabiDylib} ${libcxxDylib} ${copyfile} ${removefile}; do
       while IFS= read -r f; do
         rel="''${f#$pkg/}"
         if [ -e "$out/$rel" ]; then
@@ -44,6 +46,8 @@ stdenvNoCC.mkDerivation {
     test -L $out/usr/lib/libc++.dylib
     test -e $out/usr/lib/libc++.1.dylib
     test -e $out/usr/lib/libc++abi.dylib
+    test -e $out/usr/lib/libcopyfile.dylib
+    test -e $out/usr/lib/libremovefile.dylib
 
     runHook postInstall
   '';
