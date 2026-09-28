@@ -3,7 +3,7 @@
 # the shell_cmds, file_cmds, text_cmds, adv_cmds, basic_cmds, system_cmds,
 # patch_cmds and misc_cmds tools, awk, file, curl, nano/pico, bash, Perl,
 # zsh, and ncurses' own; the libraries they
-# link (libedit, libncurses, libutil, libmd, libz); LibreSSL as primary TLS and a
+# link (libedit, libncurses, libutil, libmd, libz, libxml2, libxo); LibreSSL as primary TLS and a
 # complete OpenSSL 0.9.8 install under /compat/OS X/10.7; terminfo; and the
 # CA bundle curl reads, /etc/ssl/cert.pem. No dyld yet, so nothing runs.
 { lib
@@ -34,6 +34,8 @@
 , file
 , curl
 , zlib
+, libxml2
+, libxo
 , libressl
 , openssl098
 , nano
@@ -45,12 +47,12 @@
 
 let
   cmds = [ shellCmds fileCmds textCmds advCmds basicCmds systemCmds patchCmds miscCmds awk file curl nano bash darwinPerl zsh ncursesTools ];
-  members = [ libSystem libsystemTree2 libcxxDylib libcxxabiDylib copyfile removefile ncurses terminfo certPem libedit libutil libmd zlib libressl openssl098 ] ++ cmds;
+  members = [ libSystem libsystemTree2 libcxxDylib libcxxabiDylib copyfile removefile ncurses terminfo certPem libedit libutil libmd zlib libxml2 libxo libressl openssl098 ] ++ cmds;
 
   # Union of passthru.allowUndefined from all members.
   declared =
     lib.foldl' (acc: p: acc // (p.allowUndefined or { })) { }
-      (lib.attrValues libsystemPass2 ++ [ libcxxDylib libcxxabiDylib copyfile removefile ncurses libedit libutil libmd libressl openssl098 ] ++ cmds);
+      (lib.attrValues libsystemPass2 ++ [ libcxxDylib libcxxabiDylib copyfile removefile ncurses libedit libutil libmd libxml2 libxo libressl openssl098 ] ++ cmds);
 
   # Runtime-provided (dyld defines in loaded process, not in a library).
   runtimeProvided = [ "dyld_stub_binder" ];
@@ -95,6 +97,17 @@ mkDarwinPackage {
     done
     for f in /usr/lib/libz.1.dylib /usr/lib/libz.dylib /usr/include/zlib.h; do
       [ -e "$out$f" ] || { echo "rootfs: missing zlib file $f" >&2; exit 1; }
+    done
+    for f in /usr/lib/libxml2.2.dylib /usr/lib/libxml2.dylib \
+      /usr/include/libxml2/libxml/parser.h /usr/bin/xmllint /usr/bin/xmlcatalog; do
+      [ -e "$out$f" ] || { echo "rootfs: missing libxml2 file $f" >&2; exit 1; }
+    done
+    for f in /usr/lib/libxo.0.dylib /usr/lib/libxo.dylib \
+      /usr/include/libxo/xo.h /usr/bin/xo; do
+      [ -e "$out$f" ] || { echo "rootfs: missing libxo file $f" >&2; exit 1; }
+    done
+    for f in /bin/df /usr/bin/wc /usr/bin/last /usr/bin/w /usr/bin/uptime; do
+      [ -e "$out$f" ] || { echo "rootfs: missing utility $f" >&2; exit 1; }
     done
     for f in /usr/lib/libcrypto.0.9.8.dylib /usr/lib/libssl.0.9.8.dylib \
       /usr/local/openssl-0.9.8 /System/Library/OpenSSL; do

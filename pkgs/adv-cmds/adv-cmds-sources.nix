@@ -18,6 +18,9 @@
     "gencat/gencat.c"
     "gencat/genlib.c"
   ];
+  last = [
+    "last/last.c"
+  ];
   locale = [
     "locale/locale.cc"
   ];

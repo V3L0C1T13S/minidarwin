@@ -180,6 +180,12 @@
   users = [
     "users/users.cc"
   ];
+  w = [
+    "w/fmt.c"
+    "w/pr_time.c"
+    "w/proc_compare.c"
+    "w/w.c"
+  ];
   what = [
     "what/what.c"
   ];

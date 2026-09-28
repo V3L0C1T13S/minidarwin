@@ -365,6 +365,20 @@ lib.makeScope pkgs.newScope (self: with self; {
     toolchain = toolchainStage3;
   };
 
+  libxml2 = callPackage ./pkgs/libxml2/libxml2.nix {
+    toolchain = toolchainStage3;
+  };
+  libxml2Test = callPackage ./pkgs/libxml2/libxml2-test.nix {
+    toolchain = toolchainStage3;
+  };
+
+  libxo = callPackage ./pkgs/libxo/libxo.nix {
+    toolchain = toolchainStage3;
+  };
+  libxoTest = callPackage ./pkgs/libxo/libxo-test.nix {
+    toolchain = toolchainStage3;
+  };
+
   libressl = callPackage ./pkgs/libressl/libressl.nix {
     toolchain = toolchainStage3;
   };

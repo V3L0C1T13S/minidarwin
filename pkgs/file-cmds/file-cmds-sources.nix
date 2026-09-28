@@ -38,6 +38,9 @@
     "dd/misc.c"
     "dd/position.c"
   ];
+  df = [
+    "df/df.c"
+  ];
   du = [
     "du/du.c"
   ];

@@ -138,4 +138,7 @@
     "vis/foldit.c"
     "vis/vis.c"
   ];
+  wc = [
+    "wc/wc.c"
+  ];
 }

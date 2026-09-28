@@ -7,7 +7,6 @@
 #
 # Not built: apply (<usbuf.h>, from libsbuf, which Apple has not released),
 # su (links libpam; and it is set-uid, which the rootfs format cannot say),
-# w/uptime (written against libxo, which Apple has not released either); the
 # test helpers killall_test_prog and su_test_setauid.
 #
 # users is C++, so this package links with toolchainStage4 (see mk-cmds.nix).
@@ -17,6 +16,8 @@
 , toolchain
 , shGenerated
 , libedit
+, libutil
+, libxo
 , bison
 }:
 
@@ -186,6 +187,28 @@ let
         "_endutxent" = "system_asl"; # see who
         "_getutxent" = "system_asl";
         "_setutxent" = "system_asl";
+      };
+    };
+    w = {
+      cflags = [ "-I${libxo}/usr/include" "-I${../compat}" ];
+      libraries = [
+        { pkg = libutil; l = "util"; }
+        { pkg = libxo; l = "xo"; }
+      ];
+      man = {
+        "w/w.1" = "/usr/share/man/man1/w.1";
+        "w/uptime.1" = "/usr/share/man/man1/uptime.1";
+      };
+      links."/usr/bin/uptime" = "/usr/bin/w";
+      allowUndefined = {
+        "_endutxent" = "system_asl";
+        "_getutxent" = "system_asl";
+        "_setutxent" = "system_asl";
+        "_freeaddrinfo" = "system_info";
+        "_getaddrinfo" = "system_info";
+        "_getnameinfo" = "system_info";
+        "___res_9_state" = "system_info";
+        "_res_9_init" = "system_info";
       };
     };
     what = { };

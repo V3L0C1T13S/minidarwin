@@ -67,6 +67,8 @@
             file
             curl
             zlib
+            libxml2
+            libxo
             libressl
             openssl098
             nano
@@ -98,7 +100,7 @@
       checks = forAllSystems (system: pkgs:
         let scope = nativeScope pkgs;
         in {
-          inherit (scope) sdkTest runtimesTest libsystemTest libdispatchTest cxxLinkTest releaseTest;
+          inherit (scope) sdkTest runtimesTest libsystemTest libdispatchTest cxxLinkTest libxml2Test libxoTest releaseTest;
         });
 
       # Full set for nix eval; cross.<arch> retargets it.

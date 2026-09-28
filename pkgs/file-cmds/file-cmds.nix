@@ -5,8 +5,7 @@
 # readlink, sum, uncompress, unlink) are its `links`, as symlinks; shar, a
 # script, is extraInstall.
 #
-# Not built: df (written against libxo, which Apple has not released), ipcs
-# (Kernel.framework's private headers, for the kernel's struct layouts), gzip
+# Not built: ipcs (Kernel.framework's private headers, for the kernel's struct layouts), gzip
 # (zlib, libbz2 and liblzma), mtree (CoreFoundation); the test helpers
 # gettime_ns, sparse and touch_epoch.
 { lib
@@ -14,6 +13,7 @@
 , sources
 , toolchain
 , libutil
+, libxo
 , ncurses
 , libmd
 , commonCryptoHeaders
@@ -75,6 +75,14 @@ let
     dd = {
       installDir = "/bin";
       libraries = [{ pkg = libutil; l = "util"; }]; # frameworks phase
+    };
+    df = {
+      installDir = "/bin";
+      cflags = [ "-I${libxo}/usr/include" ];
+      libraries = [
+        { pkg = libutil; l = "util"; }
+        { pkg = libxo; l = "xo"; }
+      ];
     };
     du = { libraries = [{ pkg = libutil; l = "util"; }]; };
     install = {

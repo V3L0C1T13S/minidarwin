@@ -1,5 +1,5 @@
 # Content-addressed sources. Apple pins follow the macOS 26 / xnu-12377 set
-# except for explicitly noted legacy projects; LibreSSL is pinned upstream.
+# except for explicitly noted legacy projects; LibreSSL and libxo are pinned upstream.
 { fetchFromGitHub, fetchurl }:
 
 let
@@ -98,6 +98,14 @@ in
     "sha256-fUFOM7WuF2TnmQcdq4H0oOxdg26XvyjzaZq94e511zs=";
   zlib = apple "zlib" "zlib-100"
     "sha256-EAlHKSdWHRbz6F1CjH+jubyEQehSmxE37Ua0iQ4ApcQ=";
+  libxml2 = apple "libxml2" "libxml2-39.10"
+    "sha256-neMF3FibCpQT4qMBNc5tYCSDJgeyjzLx2wxYEVu+CcU=";
+  libxo = fetchFromGitHub {
+    owner = "juniper";
+    repo = "libxo";
+    rev = "2.0.0";
+    hash = "sha256-Mtxa+iLSitpcQYDkT8C3gYOKQAsAzgPybhogqVA8DGc=";
+  };
   # Apple does not publish its LibreSSL source. Use the portable upstream release.
   libressl = fetchurl {
     url = "https://ftp.openbsd.org/pub/OpenBSD/LibreSSL/libressl-4.3.2.tar.gz";

@@ -4,8 +4,7 @@
 # `executables` aggregate's variant links (grep, md5, bintrans) are made, as
 # symlinks.
 #
-# Not built: wc, written against libxo (<libxo/xo.h>), which Apple has not
-# released; jq and its onigurama archive (not a POSIX tool, and a project of
+# Not built: jq and its onigurama archive (not a POSIX tool, and a project of
 # its own); test_base64 (libdarwintest).
 { lib
 , mkCmds
@@ -14,6 +13,7 @@
 , libutil
 , ncurses
 , libmd
+, libxo
 , commonCryptoHeaders
 }:
 
@@ -177,6 +177,10 @@ let
     # The frameworks phase names libxo.tbd, but unvis calls nothing in it.
     unvis = { };
     vis = { };
+    wc = {
+      cflags = [ "-I${libxo}/usr/include" ];
+      libraries = [{ pkg = libxo; l = "xo"; }];
+    };
   };
 in
 

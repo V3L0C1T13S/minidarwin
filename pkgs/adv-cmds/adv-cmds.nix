@@ -9,8 +9,7 @@
 #
 # locale is C++, so this package links with toolchainStage4.
 #
-# Not built: last (written against libxo, which Apple has not released), pkill
-# and pgrep (libsysmon, closed source), localedef (a host tool too, and the
+# Not built: pkill and pgrep (libsysmon, closed source), localedef (a host tool too, and the
 # locale database is not built), genwrap (Apple's build-time wrapper
 # generator), ps_lowpriv and the test helpers.
 { lib
@@ -18,6 +17,7 @@
 , sources
 , toolchain
 , ncurses
+, libxo
 , runCommand
 }:
 
@@ -65,6 +65,15 @@ let
       };
     };
     gencat = { defines = fbsdid; };
+    last = {
+      cflags = [ "-I${libxo}/usr/include" ];
+      libraries = [{ pkg = libxo; l = "xo"; }];
+      allowUndefined = {
+        "_endutxent_wtmp" = "system_asl";
+        "_getutxent_wtmp" = "system_asl";
+        "_setutxent_wtmp" = "system_asl";
+      };
+    };
     locale = { };
     lsvfs = { };
     ps = {
