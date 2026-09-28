@@ -141,12 +141,6 @@ let
     # corecrypto - arc4random
     "_ccrng" = "corecrypto";
     "_ccrng_uniform" = "corecrypto";
-    # dispatch - psort_b
-    "_dispatch_get_global_queue" = "dispatch";
-    "_dispatch_group_create" = "dispatch";
-    "_dispatch_group_async_f" = "dispatch";
-    "_dispatch_group_wait" = "dispatch";
-    "_dispatch_release" = "dispatch";
   } // lib.optionalAttrs (targetArch != "aarch64") {
     # system_m x86_64-only - strtod/hdtoa (fma, __fpclassifyd)
     "_fma" = "system_m";

@@ -38,6 +38,7 @@ stdenvNoCC.mkDerivation {
     test -e $out/usr/lib/libSystem.B.dylib
     test -e $out/usr/lib/libSystem.dylib
     test -e $out/usr/lib/system/libsystem_c.dylib
+    test -e $out/usr/lib/system/libdispatch.dylib
     n=$(find $out/usr/lib/system -name '*.dylib' | wc -l | tr -d ' ')
     echo "[minidarwin] sdk-stage3: libSystem over $n members" >&2
 

@@ -34,20 +34,7 @@ let
   allowUndefined =
     lib.genAttrs
       (lib.concatMap (d: map (f: "_CC_${d}_${f}") [ "Init" "Update" "Final" ]) digests)
-      (_: "commonCrypto")
-    // lib.genAttrs [
-      # mdXhl.c's *FdChunk read through a dispatch_io channel.
-      "__dispatch_data_empty"
-      "_dispatch_data_apply"
-      "_dispatch_io_create"
-      "_dispatch_io_read"
-      "_dispatch_queue_create"
-      "_dispatch_release"
-      "_dispatch_semaphore_create"
-      "_dispatch_semaphore_signal"
-      "_dispatch_semaphore_wait"
-    ]
-      (_: "dispatch");
+      (_: "commonCrypto");
 in
 
 mkDarwinPackage {

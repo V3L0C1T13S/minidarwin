@@ -5,16 +5,14 @@
 , toolchain
 , libcxx
 , libcxxabiDylib
+, copyfile
 }:
 
 let
-  # Undefined symbols from absent libraries (dyld + copyfile).
+  # Undefined symbols from dyld, which is not yet built.
   absentUndefined = {
     "_dlopen" = "dyld";
     "_dlsym" = "dyld";
-    "_fcopyfile" = "copyfile";
-    "_copyfile_state_alloc" = "copyfile";
-    "_copyfile_state_free" = "copyfile";
   };
 in
 
@@ -34,6 +32,7 @@ mkDarwinPackage {
     md_dylib libc++.1.dylib /usr/lib/libc++.1.dylib obj \
       -Wl,-force_load,${libcxx}/usr/lib/libc++.a \
       -L${libcxxabiDylib}/usr/lib -Wl,-reexport-lc++abi \
+      -L${copyfile}/usr/lib -lcopyfile \
       ${lib.escapeShellArgs (map (s: "-Wl,-U,${s}") (lib.attrNames absentUndefined))} \
       -lSystem
 

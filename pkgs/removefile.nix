@@ -36,10 +36,15 @@ mkDarwinPackage {
   buildPhase = ''
     runHook preBuild
 
+    export MD_SRCROOT=$PWD
     mkdir -p obj
+    # APFS's private fsctl header is not in the pinned open SDK. The optional
+    # clear-purgeable path cannot be built without it.
+    substituteInPlace removefile_tree_walker.c \
+      --replace-fail '#if __APPLE__ && !TARGET_OS_SIMULATOR' '#if 0'
     md_compile $PWD/obj "$CC" -Os -fno-common -- \
       ${lib.concatMapStringsSep " " (f: "$PWD/${f}") sourcesToCompile} \
-      ${../compat}/getiopolicy-stub.c
+      ${./compat}/getiopolicy-stub.c
 
     printf '%s\n' ${lib.escapeShellArgs exports} | sort > exports
     md_dylib libremovefile.dylib /usr/lib/libremovefile.dylib obj \

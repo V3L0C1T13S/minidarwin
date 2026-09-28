@@ -88,6 +88,8 @@ mkDarwinPackage {
     fi
     ln -s private/etc $out/etc
     [ -s $out/etc/ssl/cert.pem ] || { echo "rootfs: no /etc/ssl/cert.pem" >&2; exit 1; }
+    [ -e $out/usr/lib/system/libdispatch.dylib ] || {
+      echo "rootfs: missing libdispatch" >&2; exit 1; }
     for f in /usr/lib/libcrypto.dylib /usr/lib/libssl.dylib /usr/bin/openssl; do
       [ -e "$out$f" ] || { echo "rootfs: missing primary TLS file $f" >&2; exit 1; }
     done

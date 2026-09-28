@@ -29,25 +29,33 @@ mkDarwinPackage {
   src = sources.copyfile;
 
   passthru.installName = "/usr/lib/libcopyfile.dylib";
-  passthru.allowUndefined = { };
+  passthru.allowUndefined = {
+    "_syslog$DARWIN_EXTSN" = "system_asl";
+    "_mbr_uid_to_uuid" = "system_info";
+  };
 
   buildPhase = ''
     runHook preBuild
 
+    export MD_SRCROOT=$PWD
     mkdir -p obj
     substituteInPlace xattr_flags.c \
       --replace-fail '#include <xpc/private.h>' '/* MiniDarwin: no private XPC headers. */' \
       --replace-fail '_xpc_runtime_is_app_sandboxed()' '0'
+    substituteInPlace copyfile.c \
+      --replace-fail '<System/sys/content_protection.h>' '<sys/content_protection.h>' \
+      --replace-fail '<Kernel/sys/decmpfs.h>' '<sys/decmpfs.h>'
 
     md_compile $PWD/obj "$CC" -Os -fno-common -fblocks \
-      -I${../compat} \
+      -I${./compat} \
       -- $PWD/copyfile.c $PWD/xattr_flags.c \
-        ${../compat}/quarantine-stub.c ${../compat}/dispatch-once.c
+        ${./compat}/quarantine-stub.c
 
     printf '%s\n' ${lib.escapeShellArgs exports} | sort > exports
     md_dylib libcopyfile.dylib /usr/lib/libcopyfile.dylib obj \
       -Wl,-dead_strip \
       -Wl,-exported_symbols_list,$PWD/exports \
+      -Wl,-U,'_syslog$DARWIN_EXTSN' -Wl,-U,_mbr_uid_to_uuid \
       -lSystem
 
     runHook postBuild

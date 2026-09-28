@@ -43,7 +43,7 @@ let
 
     _LIBCPP_PSTL_BACKEND_SERIAL = "";
     _LIBCPP_PSTL_BACKEND_STD_THREAD = "1";
-    _LIBCPP_PSTL_BACKEND_LIBDISPATCH = ""; # libdispatch not yet available
+    _LIBCPP_PSTL_BACKEND_LIBDISPATCH = ""; # libc++ bootstraps before libdispatch
 
     _LIBCPP_HARDENING_MODE_DEFAULT = "2"; # fast mode (upstream default)
   };

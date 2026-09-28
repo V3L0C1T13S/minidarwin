@@ -13,12 +13,13 @@ Pure, reproducible Nix bootstrap of a minimal Darwin userland from Apple's relea
 ```bash
 # XNU/Darwin specific headers
 nix build .#sdk
-nix flake check                    # sdkTest + runtimesTest + libsystemTest + cxxLinkTest
+nix flake check                    # SDK, runtime, libSystem, dispatch, C++ and release checks
 
 # Libraries
 nix build .#libsyscall             # libsystem_kernel.dylib
 nix build .#libcxx                 # libc++.a (on compiler-rt + libunwind + libc++abi)
-nix build .#libSystem              # umbrella libSystem.B.dylib (10 re-exported members)
+nix build .#libdispatch            # Apple's core libdispatch.dylib
+nix build .#libSystem              # umbrella libSystem.B.dylib (includes dispatch)
 nix build .#libmachO               # dyld's Mach-O reader (stage 5)
 nix build .#libcxxDylib .#libcxxabiDylib
 nix build .#sdkStage4              # sysroot where plain `-lc++` links (RTTI included)
@@ -66,7 +67,7 @@ nix build .#rootfs                 # native (host arch)
 nix build .#cross.x86_64.rootfs
 nix build .#cross.aarch64.rootfs
 nix build .#cross.x86_64.sdkTest .#cross.x86_64.runtimesTest .#cross.x86_64.libsystemTest \
-  .#cross.x86_64.cxxLinkTest
+  .#cross.x86_64.libdispatchTest .#cross.x86_64.cxxLinkTest
 ```
 
 `packages`/`checks` are the native target. `legacyPackages.<system>.cross.<arch>` is the full retargeted set.
@@ -105,9 +106,9 @@ release's.
 
 ## Limitations
 
-Not every `Libsystem/requiredlibs` entry is buildable from released source. Seven are absent by design (see [`pkgs/libsystem/absent-members.nix`](pkgs/libsystem/absent-members.nix) for reasons):
+Not every `Libsystem/requiredlibs` entry is buildable from released source (see [`pkgs/libsystem/absent-members.nix`](pkgs/libsystem/absent-members.nix) for reasons):
 
-`dispatch`, `system_m` (no arm64 in Libm-2026), `system_info`, `system_notify`, `system_darwin`, `copyfile`, `removefile` - plus closed-source `system_trace`, `xpc`, `corecrypto`, etc.
+`system_m` (no arm64 in Libm-2026), `system_info`, `system_notify`, `system_darwin`, `copyfile`, `removefile` - plus closed-source `system_trace`, `xpc`, `corecrypto`, etc. Core dispatch is built and shipped; workgroup and eventlink support awaits XNU's unreleased work interval instance API.
 
 Each member's `allowUndefined` lists exactly which symbols it expects from absent libs - no blanket `dynamic_lookup`. `rootfs` checks that every undefined import is declared and every declaration is still needed.
 

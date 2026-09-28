@@ -39,6 +39,7 @@
             libsystemTree1
             libsystemTree2
             libSystem
+            libdispatch
             sdkStage3
             toolchainStage3
             libmachO
@@ -97,7 +98,7 @@
       checks = forAllSystems (system: pkgs:
         let scope = nativeScope pkgs;
         in {
-          inherit (scope) sdkTest runtimesTest libsystemTest cxxLinkTest releaseTest;
+          inherit (scope) sdkTest runtimesTest libsystemTest libdispatchTest cxxLinkTest releaseTest;
         });
 
       # Full set for nix eval; cross.<arch> retargets it.

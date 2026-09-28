@@ -138,11 +138,10 @@ lib.makeScope pkgs.newScope (self: with self; {
           "___gcc_personality_v0" "___clear_cache"
         ] ++ lib.optional (targetArch == "aarch64") "__aarch64_ldadd8_acq_rel"
         ++ lib.optional (targetArch != "aarch64") "___floatundixf";
-        # dyld (stage 5) + dispatch holes; x86_64 adds system_m long-double.
+        # dyld (stage 5) holes; x86_64 adds system_m long-double.
         allowUndefined = {
           "_dlsym" = "dyld";
           "__availability_version_check" = "dyld";
-          "_dispatch_once_f" = "dispatch";
         } // lib.optionalAttrs (targetArch != "aarch64") {
           "_scalbnl" = "system_m";
           "_logbl" = "system_m";
@@ -178,6 +177,11 @@ lib.makeScope pkgs.newScope (self: with self; {
   # Pass 1: -undefined dynamic_lookup, no siblings (exports final).
   libsystemPass1 = mkLibsystem null;
 
+  # Build dispatch against the pass-1 members before the second pass links.
+  libdispatch = callPackage ./pkgs/libdispatch/libdispatch.nix {
+    toolchain = toolchainStage2;
+  };
+
   # Pass-1 members merged for pass 2's -L. Some requiredlibs still absent (see absent-members.nix).
   libsystemTree1 = callPackage ./pkgs/libsystem/libsystem-tree.nix {
     name = "minidarwin-libsystem-pass1";
@@ -191,7 +195,7 @@ lib.makeScope pkgs.newScope (self: with self; {
       libsystemPlatform
       libsystemPthread
       libsystemMalloc
-    ] ++ [ libsyscall ];
+    ] ++ [ libsyscall libdispatch ];
   };
 
   # Pass 2: relink against pass-1 tree with exact -lsystem_* deps, -undefined error.
@@ -209,7 +213,7 @@ lib.makeScope pkgs.newScope (self: with self; {
       libsystemPlatform
       libsystemPthread
       libsystemMalloc
-    ] ++ [ libsyscall ];
+    ] ++ [ libsyscall libdispatch ];
   };
 
   # Umbrella: /usr/lib/libSystem.B.dylib re-exporting every pass-2 member.
@@ -229,6 +233,9 @@ lib.makeScope pkgs.newScope (self: with self; {
   };
 
   libsystemTest = callPackage ./pkgs/libsystem/libsystem-test.nix {
+    toolchain = toolchainStage3;
+  };
+  libdispatchTest = callPackage ./pkgs/libdispatch/libdispatch-test.nix {
     toolchain = toolchainStage3;
   };
 
