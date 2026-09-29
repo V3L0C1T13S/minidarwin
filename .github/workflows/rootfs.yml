@@ -25,7 +25,9 @@ jobs:
       - run: python3 --version && python3 scripts/test_mdrootfs.py -v
 
   build:
-    name: rootfs (${{ matrix.arch }})
+    name: rootfs (${{ matrix.targetArch }} on ARM64)
+    needs: mdrootfs
+    # Each target gets its own ARM VM; x86_64 is cross-compiled, not executed.
     runs-on: macos-15
     timeout-minutes: 180
     permissions:
@@ -34,14 +36,22 @@ jobs:
       attestations: write
     strategy:
       fail-fast: false
+      max-parallel: 2
       matrix:
         include:
-          - arch: aarch64
+          - targetArch: aarch64
             scope: .#
-          - arch: x86_64
+          - targetArch: x86_64
             scope: .#cross.x86_64.
     steps:
       - uses: actions/checkout@v7
+
+      - name: Require ARM64 build host
+        run: |
+          test "$(uname -m)" = arm64 || {
+            echo "::error::Both target builds require an ARM64 macOS runner"
+            exit 1
+          }
 
       - uses: cachix/install-nix-action@v31
         with:
@@ -59,10 +69,12 @@ jobs:
       # recompiled; a change to one stage only rebuilds it and what is above
       # it. Pull requests restore main's cache but do not write one, so the
       # repo's 10 GB of Actions cache is not split across every branch.
+      # Separate host and target namespaces, including restore and purge,
+      # so the cross build cannot restore a former Intel runner's store.
       - uses: nix-community/cache-nix-action@v7
         with:
-          primary-key: nix-${{ runner.os }}-${{ matrix.arch }}-${{ hashFiles('flake.lock', '**/*.nix', 'lib/*.sh', 'scripts/*') }}
-          restore-prefixes-first-match: nix-${{ runner.os }}-${{ matrix.arch }}-
+          primary-key: nix-v2-${{ runner.os }}-${{ runner.arch }}-${{ matrix.targetArch }}-${{ hashFiles('flake.lock', '**/*.nix', 'lib/*.sh', 'scripts/*') }}
+          restore-prefixes-first-match: nix-v2-${{ runner.os }}-${{ runner.arch }}-${{ matrix.targetArch }}-
           save: ${{ github.event_name == 'push' }}
           # A full build is ~4 GB (LLVM's monorepo source is 2 GB of
           # it). The limit is above that on purpose: it collects what went
@@ -70,7 +82,7 @@ jobs:
           # touching anything the next run can still use.
           gc-max-store-size-macos: 6G
           purge: true
-          purge-prefixes: nix-${{ runner.os }}-${{ matrix.arch }}-
+          purge-prefixes: nix-v2-${{ runner.os }}-${{ runner.arch }}-${{ matrix.targetArch }}-
           purge-created: 0
           purge-primary-key: never
 
@@ -79,7 +91,8 @@ jobs:
         run: |
           s='${{ matrix.scope }}'
           nix build --print-build-logs -o result-check \
-            ${s}sdkTest ${s}runtimesTest ${s}libsystemTest ${s}cxxLinkTest ${s}releaseTest
+            ${s}sdkTest ${s}runtimesTest ${s}libsystemTest ${s}libdispatchTest \
+            ${s}cxxLinkTest ${s}libxml2Test ${s}libxoTest ${s}releaseTest
 
       # Tarball, manifest, spec and bundle (docs/rootfs-spec.md). The
       # derivation already verified them against each other.
