@@ -370,6 +370,10 @@ lib.makeScope pkgs.newScope (self: with self; {
     inherit copyfile;
   };
 
+  zip = callPackage ./pkgs/zip/zip.nix {
+    toolchain = toolchainStage3;
+  };
+
   libxml2 = callPackage ./pkgs/libxml2/libxml2.nix {
     toolchain = toolchainStage4;
     inherit icu;

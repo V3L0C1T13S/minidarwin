@@ -68,6 +68,7 @@
             curl
             zlib
             bzip2
+            zip
             icu
             libxml2
             libxo

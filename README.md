@@ -34,6 +34,7 @@ nix build .#patchCmds .#miscCmds .#awk  # diff, cmp, patch; cal, tsort, units; a
 nix build .#libressl              # primary TLS libraries and /usr/bin/openssl (stage 6)
 nix build .#curl                  # /usr/bin/curl and static libcurl, linked to LibreSSL (stage 6)
 nix build .#bzip2                 # libbz2, bzip2, bunzip2 and bzcat (stage 6)
+nix build .#zip                   # zip, unzip and related utilities (stage 6)
 nix build .#icu .#libxml2         # ICU 76 Unicode data/libraries; libxml2 with ICU support (stage 6)
 nix build .#openssl098            # OpenSSL 0.9.8 under /compat/OS X/10.7 (stage 6)
 nix build .#certPem               # /etc/ssl/cert.pem from security_certificates' roots (stage 6)

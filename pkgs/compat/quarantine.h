@@ -20,6 +20,7 @@ int qtn_file_init_with_path(qtn_file_t, const char *);
 int qtn_file_init_with_data(qtn_file_t, const void *, size_t);
 void qtn_file_free(qtn_file_t);
 int qtn_file_apply_to_fd(qtn_file_t, int);
+int qtn_file_apply_to_path(qtn_file_t, const char *);
 char *qtn_error(int);
 int qtn_file_to_data(qtn_file_t, char *, size_t *);
 qtn_file_t qtn_file_clone(qtn_file_t);

@@ -12,6 +12,7 @@ int qtn_file_init_with_path(qtn_file_t file, const char *path) { (void)file; (vo
 int qtn_file_init_with_data(qtn_file_t file, const void *data, size_t size) { (void)file; (void)data; (void)size; return -1; }
 void qtn_file_free(qtn_file_t file) { (void)file; }
 int qtn_file_apply_to_fd(qtn_file_t file, int fd) { (void)file; (void)fd; return -1; }
+int qtn_file_apply_to_path(qtn_file_t file, const char *path) { (void)file; (void)path; return -1; }
 char *qtn_error(int error) { (void)error; return 0; }
 int qtn_file_to_data(qtn_file_t file, char *data, size_t *size) { (void)file; (void)data; (void)size; return -1; }
 qtn_file_t qtn_file_clone(qtn_file_t file) { (void)file; return 0; }

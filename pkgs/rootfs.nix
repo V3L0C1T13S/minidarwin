@@ -2,7 +2,7 @@
 # Contains libSystem (+ members), libc++.1.dylib, libc++abi.dylib and stage 6:
 # the shell_cmds, file_cmds, text_cmds, adv_cmds, basic_cmds, system_cmds,
 # patch_cmds and misc_cmds tools, awk, file, curl, nano/pico, bash, Perl,
-# zsh, bzip2 and ncurses' own; the libraries they link (libedit, libncurses,
+# zsh, bzip2, zip/unzip and ncurses' own; the libraries they link (libedit, libncurses,
 # libutil, libmd, libz, libbz2, ICU, libxml2, libxo); LibreSSL as primary TLS
 # and a complete OpenSSL 0.9.8 install under /compat/OS X/10.7; terminfo; and the
 # CA bundle curl reads, /etc/ssl/cert.pem. No dyld yet, so nothing runs.
@@ -35,6 +35,7 @@
 , curl
 , zlib
 , bzip2
+, zip
 , icu
 , libxml2
 , libxo
@@ -49,12 +50,12 @@
 
 let
   cmds = [ shellCmds fileCmds textCmds advCmds basicCmds systemCmds patchCmds miscCmds awk file curl nano bash darwinPerl zsh ncursesTools ];
-  members = [ libSystem libsystemTree2 libcxxDylib libcxxabiDylib copyfile removefile ncurses terminfo certPem libedit libutil libmd zlib bzip2 icu libxml2 libxo libressl openssl098 ] ++ cmds;
+  members = [ libSystem libsystemTree2 libcxxDylib libcxxabiDylib copyfile removefile ncurses terminfo certPem libedit libutil libmd zlib bzip2 zip icu libxml2 libxo libressl openssl098 ] ++ cmds;
 
   # Union of passthru.allowUndefined from all members.
   declared =
     lib.foldl' (acc: p: acc // (p.allowUndefined or { })) { }
-      (lib.attrValues libsystemPass2 ++ [ libcxxDylib libcxxabiDylib copyfile removefile ncurses libedit libutil libmd icu libxml2 libxo libressl openssl098 bzip2 ] ++ cmds);
+      (lib.attrValues libsystemPass2 ++ [ libcxxDylib libcxxabiDylib copyfile removefile ncurses libedit libutil libmd icu libxml2 libxo libressl openssl098 bzip2 zip ] ++ cmds);
 
   # Runtime-provided (dyld defines in loaded process, not in a library).
   runtimeProvided = [ "dyld_stub_binder" ];
@@ -104,6 +105,9 @@ mkDarwinPackage {
       /usr/include/bzlib.h /usr/bin/bzip2 /usr/bin/bunzip2 /usr/bin/bzcat \
       /usr/bin/bzip2recover; do
       [ -e "$out$f" ] || { echo "rootfs: missing bzip2 file $f" >&2; exit 1; }
+    done
+    for f in /usr/bin/zip /usr/bin/unzip /usr/bin/zipinfo /usr/bin/zipgrep; do
+      [ -e "$out$f" ] || { echo "rootfs: missing zip utility $f" >&2; exit 1; }
     done
     for f in /usr/lib/libicuuc.76.dylib /usr/lib/libicui18n.76.dylib \
       /usr/lib/libicudata.76.dylib /usr/include/unicode/utypes.h \

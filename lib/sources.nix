@@ -100,6 +100,9 @@ in
     "sha256-EAlHKSdWHRbz6F1CjH+jubyEQehSmxE37Ua0iQ4ApcQ=";
   bzip2 = apple "bzip2" "bzip2-47"
     "sha256-5UGwwh407vsimlI0kfXeI6rCk/YOnucF8dUy83IrUnM=";
+  # Last Apple release of Info-ZIP's zip and unzip utilities.
+  zip = apple "zip" "zip-29"
+    "sha256-7luQDz8bbWGUiQlxLQWBX3f6VNDEaXAsLmbgJeQuO3c=";
   libxml2 = apple "libxml2" "libxml2-39.10"
     "sha256-neMF3FibCpQT4qMBNc5tYCSDJgeyjzLx2wxYEVu+CcU=";
   ICU = apple "ICU" "ICU-76133"
