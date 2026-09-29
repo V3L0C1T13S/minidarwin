@@ -365,8 +365,20 @@ lib.makeScope pkgs.newScope (self: with self; {
     toolchain = toolchainStage3;
   };
 
-  libxml2 = callPackage ./pkgs/libxml2/libxml2.nix {
+  bzip2 = callPackage ./pkgs/bzip2/bzip2.nix {
     toolchain = toolchainStage3;
+    inherit copyfile;
+  };
+
+  libxml2 = callPackage ./pkgs/libxml2/libxml2.nix {
+    toolchain = toolchainStage4;
+    inherit icu;
+  };
+
+  icuBuildRoot = callPackage ./pkgs/icu/build-root.nix { };
+  icu = callPackage ./pkgs/icu/icu.nix {
+    toolchain = toolchainStage4;
+    inherit icuBuildRoot;
   };
   libxml2Test = callPackage ./pkgs/libxml2/libxml2-test.nix {
     toolchain = toolchainStage3;

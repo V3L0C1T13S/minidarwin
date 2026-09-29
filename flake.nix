@@ -67,6 +67,8 @@
             file
             curl
             zlib
+            bzip2
+            icu
             libxml2
             libxo
             libressl

@@ -98,8 +98,12 @@ in
     "sha256-fUFOM7WuF2TnmQcdq4H0oOxdg26XvyjzaZq94e511zs=";
   zlib = apple "zlib" "zlib-100"
     "sha256-EAlHKSdWHRbz6F1CjH+jubyEQehSmxE37Ua0iQ4ApcQ=";
+  bzip2 = apple "bzip2" "bzip2-47"
+    "sha256-5UGwwh407vsimlI0kfXeI6rCk/YOnucF8dUy83IrUnM=";
   libxml2 = apple "libxml2" "libxml2-39.10"
     "sha256-neMF3FibCpQT4qMBNc5tYCSDJgeyjzLx2wxYEVu+CcU=";
+  ICU = apple "ICU" "ICU-76133"
+    "sha256-P6uipoGzB6CkOD5SghaUIRKJ27F3x5gGx7BnrI0e59g=";
   libxo = fetchFromGitHub {
     owner = "juniper";
     repo = "libxo";

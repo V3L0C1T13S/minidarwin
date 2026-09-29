@@ -202,9 +202,9 @@ mkCmds {
   ldflags = [ "-Wl,-dead_strip" ]; # DEAD_CODE_STRIPPING
 
   # grep reads gzip, bzip2, xz and lzma input through zlib, libbz2 and
-  # liblzma. liblzma was never released, and zlib and bzip2 are not built
-  # here, so grep is compiled without that: each #ifdef __APPLE__ block in
-  # file.c that touches them is turned off, and grep.h stops including their
+  # liblzma. liblzma was never released, and this grep target does not link
+  # zlib or bzip2, so it is compiled without that: each #ifdef __APPLE__ block
+  # in file.c that touches them is turned off, and grep.h stops including their
   # headers. The -Z/-J/-M/--xz options and the z*/bz* variants are still
   # accepted, and read the file as it is.
   postPatch = ''

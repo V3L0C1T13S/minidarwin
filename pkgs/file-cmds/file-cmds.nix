@@ -6,8 +6,8 @@
 # script, is extraInstall.
 #
 # Not built: ipcs (Kernel.framework's private headers, for the kernel's struct layouts), gzip
-# (zlib, libbz2 and liblzma), mtree (CoreFoundation); the test helpers
-# gettime_ns, sparse and touch_epoch.
+# (zlib and libbz2 are built; liblzma is unavailable), mtree
+# (CoreFoundation); the test helpers gettime_ns, sparse and touch_epoch.
 { lib
 , mkCmds
 , sources

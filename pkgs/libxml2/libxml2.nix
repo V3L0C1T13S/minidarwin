@@ -1,5 +1,5 @@
 # Apple's libxml2 fork, with its public library, headers and command-line tools.
-{ lib, mkDarwinPackage, sources, toolchain, cmake, gnumake, zlib }:
+{ lib, mkDarwinPackage, sources, toolchain, cmake, gnumake, zlib, icu }:
 
 let
   # libsystem_info and libsystem_m are not available in this source set.
@@ -56,14 +56,15 @@ mkDarwinPackage {
       -DCMAKE_SHARED_LINKER_FLAGS=${lib.escapeShellArg undefinedFlags} \
       -DCMAKE_EXE_LINKER_FLAGS=${lib.escapeShellArg undefinedFlags} \
       -DLIBXML2_WITH_ICONV=OFF \
-      -DLIBXML2_WITH_ICU=OFF \
+      -DLIBXML2_WITH_ICU=ON \
       -DLIBXML2_WITH_LZMA=OFF \
       -DLIBXML2_WITH_PYTHON=OFF \
       -DLIBXML2_WITH_TESTS=OFF \
       -DLIBXML2_WITH_MODULES=OFF \
       -DLIBXML2_WITH_ZLIB=ON \
       -DZLIB_INCLUDE_DIR=${zlib}/usr/include \
-      -DZLIB_LIBRARY=${zlib}/usr/lib/libz.dylib
+      -DZLIB_LIBRARY=${zlib}/usr/lib/libz.dylib \
+      -DICU_ROOT=${icu}/usr
     runHook postConfigure
   '';
 
