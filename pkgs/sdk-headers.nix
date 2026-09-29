@@ -350,7 +350,7 @@ stdenvNoCC.mkDerivation {
       $inc/mach/machine/machine_types.defs
 
     # System framework compat (sys/fsctl.h etc via /usr/include/System).
-    for h in sys/fsctl.h ${lib.optionalString (targetArch != "aarch64") "i386/cpu_capabilities.h"}; do
+    for h in sys/fsctl.h ${lib.optionalString (targetArch != "aarch64") "i386/cpu_capabilities.h machine/cpu_capabilities.h"}; do
       install -Dm444 $inc/$h $inc/System/$h
     done
 
