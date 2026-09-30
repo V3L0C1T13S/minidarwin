@@ -85,6 +85,29 @@ nix-build --check -A libsyscall   # after a full nix-build -A libsyscall
 
 All files are reproducible, and can be verified 1:1 from the build workflow too.
 
+### Installing packages
+
+`mdpkg` installs flat `.pkg` files into a writable copy of the rootfs.
+You can install software with it, like so:
+
+```bash
+nix run .#mdpkg -- inspect --pkg package.pkg
+nix run .#mdpkg -- install --pkg package.pkg --root ./my-root
+```
+
+Packages with install scripts need `--script-runner`; the host build ships a
+`sandbox-exec` one. See [pkgs/installer/README.md](pkgs/installer/README.md)
+for what is supported, how installs are made transactional, and receipts.
+
+### CI
+
+After the Linux verifier tests pass, GitHub Actions runs two parallel jobs on
+separate ARM64 macOS VMs (`macos-15`). One builds the native aarch64 target; the
+other cross-compiles x86_64 through `.#cross.x86_64.*`. Both run all build checks,
+package a release, and rebuild the rootfs and release to check determinism.
+Nix caches are separated by host and target architecture. Tagged releases wait
+for both targets before Linux verification and publication.
+
 ## Releases and verification
 
 Tagged releases publish `rootfsRelease` for both architectures, with a GitHub

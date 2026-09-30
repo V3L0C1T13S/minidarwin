@@ -80,7 +80,9 @@
             ncursesTools
             rootfs
             rootfsRelease
-            mdrootfs;
+            mdrootfs
+            installer
+            installerBootstrap;
 
           # Stage 4 pass-2 members (pass-1 at legacyPackages.<system>.libsystemPass1).
           inherit (scope.libsystemPass2)
@@ -103,7 +105,7 @@
       checks = forAllSystems (system: pkgs:
         let scope = nativeScope pkgs;
         in {
-          inherit (scope) sdkTest runtimesTest libsystemTest libdispatchTest cxxLinkTest libxml2Test libxoTest releaseTest;
+          inherit (scope) sdkTest runtimesTest libsystemTest libdispatchTest cxxLinkTest libxml2Test libxoTest releaseTest installerTest;
         });
 
       # Full set for nix eval; cross.<arch> retargets it.
@@ -130,6 +132,10 @@
 
       # `nix run .#mdrootfs -- verify --bundle ...` (docs/rootfs-spec.md).
       apps = forAllSystems (system: pkgs: {
+        mdpkg = {
+          type = "app";
+          program = "${(nativeScope pkgs).installerBootstrap}/bin/mdpkg";
+        };
         mdrootfs = {
           type = "app";
           program = "${(nativeScope pkgs).mdrootfs}/bin/mdrootfs";

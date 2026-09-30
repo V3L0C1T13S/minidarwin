@@ -418,6 +418,13 @@ lib.makeScope pkgs.newScope (self: with self; {
     toolchain = toolchainStage3;
   };
 
+  # Independent pkg installer; bootstrap builds the same core in host world.
+  installer = callPackage ./pkgs/installer/installer.nix {
+    toolchain = toolchainStage3;
+  };
+  installerBootstrap = pkgs.callPackage ./pkgs/installer/bootstrap.nix { };
+  installerTest = callPackage ./pkgs/installer/installer-test.nix { };
+
   #### stage 7: the rootfs ####################################################
 
   # Assembled rootfs (early - later stages add inputs here).

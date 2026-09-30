@@ -46,10 +46,11 @@
 , darwinPerl
 , zsh
 , ncursesTools
+, installer
 }:
 
 let
-  cmds = [ shellCmds fileCmds textCmds advCmds basicCmds systemCmds patchCmds miscCmds awk file curl nano bash darwinPerl zsh ncursesTools ];
+  cmds = [ shellCmds fileCmds textCmds advCmds basicCmds systemCmds patchCmds miscCmds awk file curl nano bash darwinPerl zsh ncursesTools installer ];
   members = [ libSystem libsystemTree2 libcxxDylib libcxxabiDylib copyfile removefile ncurses terminfo certPem libedit libutil libmd zlib bzip2 zip icu libxml2 libxo libressl openssl098 ] ++ cmds;
 
   # Union of passthru.allowUndefined from all members.

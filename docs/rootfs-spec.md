@@ -377,3 +377,18 @@ that other parsers would silently read as something else:
   YAML 1.2.
 
 Quote those values.
+
+## Installed packages in writable roots
+
+`mdpkg` installs flat `.pkg` files into a writable copy of a MiniDarwin
+rootfs. Package payloads, files made by package scripts, and receipts are
+extra state in that copy; they do not change the release's manifest, its
+digest, its sequence or its trust policy. Such a root verifies against its
+release with `mdrootfs verify --manifest ... --tree ROOT --allow-extra`, as
+long as no package or script changed a file the manifest names.
+
+mdpkg keeps its receipts under `/private/var/db/receipts` and its inventory of
+payload and script changes under `/private/var/db/mdpkg`. A package's
+checksums detect corruption; they do not establish who published it, and
+package signatures are not verified. See
+[the installer documentation](../pkgs/installer/README.md).

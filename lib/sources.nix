@@ -137,4 +137,10 @@ in
     "sha256-p1YROiK6YPLLe8klHhcikjVeVWuEW9plghsKJHXj+EM=";
   ncurses = apple "ncurses" "ncurses-79"
     "sha256-Y46SCkdZsc3r7hX1Qq4y5L51RxHR3IkCoAPP6G2mBJs=";
+  # Third-party binary fixture, only fetched by installer tests, never a base member.
+  midnightCommanderPkg = fetchurl {
+    url = "https://darling-misc.s3.eu-central-1.amazonaws.com/mc-4.8.7-0.pkg";
+    hash = "sha256-WwR/YCJH3iuc2fTtb0uV+5CDoYpkNUd9rL+sXza/oDA=";
+  };
+
 }
