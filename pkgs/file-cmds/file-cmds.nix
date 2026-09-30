@@ -5,8 +5,7 @@
 # readlink, sum, uncompress, unlink) are its `links`, as symlinks; shar, a
 # script, is extraInstall.
 #
-# Not built: ipcs (Kernel.framework's private headers, for the kernel's struct layouts), gzip
-# (zlib and libbz2 are built; liblzma is unavailable), mtree
+# Not built: ipcs (Kernel.framework's private headers, for the kernel's struct layouts), mtree
 # (CoreFoundation); the test helpers gettime_ns, sparse and touch_epoch.
 { lib
 , mkCmds
@@ -19,6 +18,8 @@
 , commonCryptoHeaders
 , copyfile
 , removefile
+, zlib
+, bzip2
 }:
 
 let
@@ -85,6 +86,29 @@ let
       ];
     };
     du = { libraries = [{ pkg = libutil; l = "util"; }]; };
+    gzip = {
+      # gzip.xcconfig replaces the project's defines. XZ decoding needs
+      # liblzma, which Apple has not released; keep the other formats.
+      defines = [ ''GZIP_APPLE_VERSION="${lib.removePrefix "file_cmds-" sources.file_cmds.rev}"'' "NO_XZ_SUPPORT" ];
+      cflags = [ "-I${zlib}/usr/include" "-I${bzip2}/usr/include" ];
+      libraries = [
+        { pkg = zlib; l = "z"; }
+        { pkg = bzip2; l = "bz2"; }
+        { pkg = copyfile; l = "copyfile"; }
+      ];
+      links = {
+        "/usr/bin/gunzip" = "/usr/bin/gzip";
+        "/usr/bin/gzcat" = "/usr/bin/gzip";
+        "/usr/bin/zcat" = "/usr/bin/gzip";
+        "/usr/share/man/man1/gunzip.1" = "/usr/share/man/man1/gzip.1";
+        "/usr/share/man/man1/gzcat.1" = "/usr/share/man/man1/gzip.1";
+        "/usr/share/man/man1/zcat.1" = "/usr/share/man/man1/gzip.1";
+        "/usr/bin/zcmp" = "/usr/bin/zdiff";
+        "/usr/bin/zless" = "/usr/bin/zmore";
+        "/usr/share/man/man1/zcmp.1" = "/usr/share/man/man1/zdiff.1";
+        "/usr/share/man/man1/zless.1" = "/usr/share/man/man1/zmore.1";
+      };
+    };
     install = {
       # Frameworks phase: libmd.tbd, for -M's digests.
       libraries = [
@@ -150,6 +174,8 @@ let
     pathchk = { };
     pax = {
       installDir = "/bin";
+      # options() selects tar's command-line syntax by the executable name.
+      links."/usr/bin/tar" = "/bin/pax";
       libraries = [{ pkg = copyfile; l = "copyfile"; }];
       allowUndefined = {
         # Archive members' owner and group names, both ways (cache.c).
@@ -228,9 +254,13 @@ mkCmds {
   inherit defines;
   ldflags = [ "-Wl,-dead_strip" ]; # DEAD_CODE_STRIPPING
 
-  # The shar aggregate.
+  # The shar aggregate and gzip's install_scripts.sh.
   extraInstall = ''
     install -Dm755 shar/shar.sh $out/usr/bin/shar
     install -Dm644 shar/shar.1 $out/usr/share/man/man1/shar.1
+    for script in gzexe zdiff zforce zmore znew; do
+      install -Dm755 gzip/$script $out/usr/bin/$script
+      install -Dm644 gzip/$script.1 $out/usr/share/man/man1/$script.1
+    done
   '';
 }

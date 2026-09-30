@@ -170,7 +170,7 @@ if [ "$changed" = 1 ]; then
     pwd realpath renice script seq sh shlock sleep stdbuf systime tee test \
     time true uname users what whereis which who xargs yes
   gen_cmds file_cmds pkgs/file-cmds/file-cmds-sources.nix \
-    chflags chmod chown cksum compress cp dd du install ipcrm ln ls mkdir \
+    chflags chmod chown cksum compress cp dd df du gzip install ipcrm ln ls mkdir \
     mkfifo mknod mv pathchk pax rm rmdir stat touch truncate xattr
   gen_cmds text_cmds pkgs/text-cmds/text-cmds-sources.nix \
     banner bintrans cat col colrm column comm csplit cut ed expand fmt fold \

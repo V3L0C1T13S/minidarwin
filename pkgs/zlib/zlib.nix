@@ -3,9 +3,21 @@
 
 let
   files = [
-    "adler32.c" "compress.c" "crc32.c" "deflate.c" "gzclose.c"
-    "gzlib.c" "gzread.c" "gzwrite.c" "infback.c" "inffast.c"
-    "inflate.c" "inftrees.c" "trees.c" "uncompr.c" "zutil.c"
+    "adler32.c"
+    "compress.c"
+    "crc32.c"
+    "deflate.c"
+    "gzclose.c"
+    "gzlib.c"
+    "gzread.c"
+    "gzwrite.c"
+    "infback.c"
+    "inffast.c"
+    "inflate.c"
+    "inftrees.c"
+    "trees.c"
+    "uncompr.c"
+    "zutil.c"
   ];
 in
 
@@ -14,6 +26,9 @@ mkDarwinPackage {
   version = lib.removePrefix "zlib-" sources.zlib.rev;
   src = sources.zlib;
   inherit toolchain;
+  passthru = {
+    installName = "/usr/lib/libz.1.dylib";
+  };
 
   buildPhase = ''
     runHook preBuild

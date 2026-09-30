@@ -44,6 +44,10 @@
   du = [
     "du/du.c"
   ];
+  gzip = [
+    "gzip/futimens.c"
+    "gzip/gzip.c"
+  ];
   install = [
     "install/xinstall.c"
   ];
