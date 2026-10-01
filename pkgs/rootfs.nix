@@ -3,7 +3,7 @@
 # the shell_cmds, file_cmds, text_cmds, adv_cmds, basic_cmds, system_cmds,
 # patch_cmds and misc_cmds tools, awk, file, curl, nano/pico, bash, Perl,
 # zsh, bzip2, zip/unzip and ncurses' own; the libraries they link (libedit, libncurses,
-# libutil, libmd, libz, libbz2, ICU, libxml2, libxo); LibreSSL as primary TLS
+# libutil, libsbuf, libmd, libz, libbz2, ICU, libxml2, libxo); LibreSSL as primary TLS
 # and a complete OpenSSL 0.9.8 install under /compat/OS X/10.7; terminfo; and the
 # CA bundle curl reads, /etc/ssl/cert.pem. No dyld yet, so nothing runs.
 { lib
@@ -22,6 +22,7 @@
 , libedit
 , shellCmds
 , libutil
+, libsbuf
 , fileCmds
 , libmd
 , textCmds
@@ -51,12 +52,12 @@
 
 let
   cmds = [ shellCmds fileCmds textCmds advCmds basicCmds systemCmds patchCmds miscCmds awk file curl nano bash darwinPerl zsh ncursesTools installer ];
-  members = [ libSystem libsystemTree2 libcxxDylib libcxxabiDylib copyfile removefile ncurses terminfo certPem libedit libutil libmd zlib bzip2 zip icu libxml2 libxo libressl openssl098 ] ++ cmds;
+  members = [ libSystem libsystemTree2 libcxxDylib libcxxabiDylib copyfile removefile ncurses terminfo certPem libedit libutil libsbuf libmd zlib bzip2 zip icu libxml2 libxo libressl openssl098 ] ++ cmds;
 
   # Union of passthru.allowUndefined from all members.
   declared =
     lib.foldl' (acc: p: acc // (p.allowUndefined or { })) { }
-      (lib.attrValues libsystemPass2 ++ [ libcxxDylib libcxxabiDylib copyfile removefile ncurses libedit libutil libmd icu libxml2 libxo libressl openssl098 bzip2 zip ] ++ cmds);
+      (lib.attrValues libsystemPass2 ++ [ libcxxDylib libcxxabiDylib copyfile removefile ncurses libedit libutil libsbuf libmd icu libxml2 libxo libressl openssl098 bzip2 zip ] ++ cmds);
 
   # Runtime-provided (dyld defines in loaded process, not in a library).
   runtimeProvided = [ "dyld_stub_binder" ];
@@ -123,7 +124,10 @@ mkDarwinPackage {
       /usr/include/libxo/xo.h /usr/bin/xo; do
       [ -e "$out$f" ] || { echo "rootfs: missing libxo file $f" >&2; exit 1; }
     done
-    for f in /bin/df /usr/bin/wc /usr/bin/last /usr/bin/w /usr/bin/uptime; do
+    for f in /usr/lib/libsbuf.dylib /usr/include/sbuf.h /usr/include/usbuf.h; do
+      [ -e "$out$f" ] || { echo "rootfs: missing libsbuf file $f" >&2; exit 1; }
+    done
+    for f in /bin/df /usr/bin/wc /usr/bin/last /usr/bin/w /usr/bin/uptime /usr/bin/apply; do
       [ -e "$out$f" ] || { echo "rootfs: missing utility $f" >&2; exit 1; }
     done
     for f in /usr/lib/libcrypto.0.9.8.dylib /usr/lib/libssl.0.9.8.dylib \

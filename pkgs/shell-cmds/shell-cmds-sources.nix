@@ -4,6 +4,9 @@
 #
 # One attribute per target. Paths are relative to the shell_cmds source root.
 {
+  apply = [
+    "apply/apply.c"
+  ];
   basename = [
     "basename/basename.c"
   ];

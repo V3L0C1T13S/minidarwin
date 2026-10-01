@@ -55,6 +55,7 @@
             libedit
             shellCmds
             libutil
+            libsbuf
             fileCmds
             libmd
             textCmds

@@ -297,6 +297,10 @@ lib.makeScope pkgs.newScope (self: with self; {
     toolchain = toolchainStage3;
   };
 
+  libsbuf = callPackage ./pkgs/compat/sbuf/libsbuf.nix {
+    toolchain = toolchainStage3;
+  };
+
   # libmd.dylib: what md5 and install link for their digests; and the
   # CommonCrypto header its own headers (and sort) include.
   commonCryptoHeaders = callPackage ./pkgs/libmd/commoncrypto-headers.nix { };

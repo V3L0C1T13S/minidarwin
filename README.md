@@ -140,7 +140,13 @@ Each member's `allowUndefined` lists exactly which symbols it expects from absen
 
 LibreSSL Portable 4.3.2 supplies the primary `libcrypto`/`libssl` and `openssl` tool. Curl links LibreSSL. Apple's OpenSSL 0.9.8 build remains available as `.#openssl098`, but its complete install and dylib install names live under `/compat/OS X/10.7`; primary binaries do not link it. Apple does not publish the LibreSSL source used by macOS, so MiniDarwin pins the portable upstream release.
 
-No `/usr/lib/dyld` yet (`libmach_o.a` builds; dyld link not started). Userland includes `bash`, `zsh`, `perl`, the `shell_cmds`, `file_cmds`, `text_cmds`, `adv_cmds`, `basic_cmds`, `patch_cmds` and `misc_cmds` tools, the basic `system_cmds` ones, `awk`, and ncurses' tools, with libedit, libncurses, libutil, libmd, LibreSSL, isolated legacy OpenSSL 0.9.8 and the terminfo database. There is no `vi`, `less`/`more` or `bc`. `wc`, `df`, `last`, `w`/`uptime` and `apply` are written against libxo or libsbuf, which Apple has not released. Imports from absent libraries are declared per tool, like the libsystem members' (`system_info` for user and group names, `system_m` for `awk`'s and `calendar`'s math, ...). No `launchd` - last open source was 2013 and depends on unreleased `libxpc`.
+No `/usr/lib/dyld` yet (`libmach_o.a` builds; dyld link not started). Userland includes `bash`, `zsh`, `perl`, the `shell_cmds`, `file_cmds`, `text_cmds`, `adv_cmds`, `basic_cmds`, `patch_cmds` and `misc_cmds` tools, the basic `system_cmds` ones, `awk`, and ncurses' tools, with libedit, libncurses, libutil, libmd, LibreSSL, isolated legacy OpenSSL 0.9.8 and the terminfo database. There is no `vi`, `less`/`more` or `bc`. `wc`, `df`, `last` and `w`/`uptime` use Juniper libxo. `apply` and `w`/`uptime` link the FreeBSD-derived `libsbuf` sources in `pkgs/compat/sbuf`; `usbuf.h` is an alias for the full sbuf header. Imports from absent libraries are declared per tool, like the libsystem members' (`system_info` for user and group names, `system_m` for `awk`'s and `calendar`'s math, ...). No `launchd` - last open source was 2013 and depends on unreleased `libxpc`.
+
+`fileCmds` includes `compress`/`uncompress`, `pax` (also installed as
+`tar`), and `gzip`/`gunzip`/`gzcat`/`zcat` with the gzip helper scripts.
+Gzip supports gzip, bzip2, compress, pack and lzip input; XZ decoding is
+disabled because liblzma is not available in the tree. The `zmore`/`zless`
+helpers require a pager, which is not yet included.
 
 ## Updating sources
 

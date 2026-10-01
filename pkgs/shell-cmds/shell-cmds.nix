@@ -5,8 +5,7 @@
 # test to [, hexdump to od, alias to each regular builtin) as symlinks, and its
 # scripts and files, in extraInstall.
 #
-# Not built: apply (<usbuf.h>, from libsbuf, which Apple has not released),
-# su (links libpam; and it is set-uid, which the rootfs format cannot say),
+# Not built: su (links libpam; and it is set-uid, which the rootfs format cannot say),
 # test helpers killall_test_prog and su_test_setauid.
 #
 # users is C++, so this package links with toolchainStage4 (see mk-cmds.nix).
@@ -17,6 +16,7 @@
 , shGenerated
 , libedit
 , libutil
+, libsbuf
 , libxo
 , bison
 }:
@@ -25,6 +25,9 @@ let
   # Per target, what differs from the project's Release settings; the
   # attributes are described in mk-cmds.nix.
   tools = {
+    apply = {
+      libraries = [{ pkg = libsbuf; l = "sbuf"; }];
+    };
     basename = { };
     chroot = {
       installDir = "/usr/sbin";
@@ -190,10 +193,11 @@ let
       };
     };
     w = {
-      cflags = [ "-I${libxo}/usr/include" "-I${../compat}" ];
+      cflags = [ "-I${libxo}/usr/include" ];
       libraries = [
         { pkg = libutil; l = "util"; }
         { pkg = libxo; l = "xo"; }
+        { pkg = libsbuf; l = "sbuf"; }
       ];
       man = {
         "w/w.1" = "/usr/share/man/man1/w.1";

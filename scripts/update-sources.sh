@@ -164,11 +164,11 @@ if [ "$changed" = 1 ]; then
   }
 
   gen_cmds shell_cmds pkgs/shell-cmds/shell-cmds-sources.nix \
-    basename chroot date dirname echo env expr false find getopt \
+    apply basename chroot date dirname echo env expr false find getopt \
     hexdump hostname id jot kill killall lastcomm locate locate.bigram \
     locate.code lockf logname mktemp nice nohup path_helper printenv printf \
     pwd realpath renice script seq sh shlock sleep stdbuf systime tee test \
-    time true uname users what whereis which who xargs yes
+    time true uname users w what whereis which who xargs yes
   gen_cmds file_cmds pkgs/file-cmds/file-cmds-sources.nix \
     chflags chmod chown cksum compress cp dd df du gzip install ipcrm ln ls mkdir \
     mkfifo mknod mv pathchk pax rm rmdir stat touch truncate xattr
