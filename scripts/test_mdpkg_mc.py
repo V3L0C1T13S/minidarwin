@@ -87,8 +87,8 @@ def main():
     before = tree(root)
     sentinel = output / "outside-sentinel"
     sentinel.write_bytes(b"outside unchanged\n")
-    command = [str(args.installer.resolve()), "install", "--pkg", str(args.pkg.resolve()),
-               "--root", str(root), "--script-runner", str(args.runner.resolve())]
+    command = [str(args.installer.resolve()), "install", "-pkg", str(args.pkg.resolve()),
+               "-root", str(root), "-script-runner", str(args.runner.resolve())]
     result = subprocess.run(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     (output / "install.log").write_text(result.stdout)
     assert result.returncode == 0, result.stdout
@@ -156,8 +156,8 @@ def main():
     attack_pkg = output / "attack.pkg"
     script = ("#!/bin/sh\nset -e\nprintf compromised > " + str(sentinel) + "\n").encode()
     attack_pkg.write_bytes(xar(component_files([("installed", stat.S_IFREG | 0o644, b"bad")], script=script)))
-    attack = subprocess.run([str(args.installer.resolve()), "install", "--pkg", str(attack_pkg),
-                             "--root", str(attack_root), "--script-runner", str(args.runner.resolve())],
+    attack = subprocess.run([str(args.installer.resolve()), "install", "-pkg", str(attack_pkg),
+                             "-root", str(attack_root), "-script-runner", str(args.runner.resolve())],
                             capture_output=True, text=True)
     (output / "sandbox-denial.log").write_text(attack.stdout + attack.stderr)
     assert attack.returncode != 0, "outside write did not fail"

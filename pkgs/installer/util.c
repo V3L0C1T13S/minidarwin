@@ -15,6 +15,7 @@
 #include <zlib.h>
 
 void (*die_hook)(void);
+void (*create_hook)(const char *path);
 
 _Noreturn void die(const char *fmt, ...) {
   va_list ap;
@@ -153,8 +154,12 @@ void path_parents(const char *base, const char *rel, int create) {
         die("not a directory: %s", host);
     } else if (errno != ENOENT)
       die("stat %s: %s", host, strerror(errno));
-    else if (create && mkdir(host, 0755))
-      die("mkdir %s: %s", host, strerror(errno));
+    else if (create) {
+      if (mkdir(host, 0755))
+        die("mkdir %s: %s", host, strerror(errno));
+      if (create_hook)
+        create_hook(host);
+    }
     free(host);
     *p = '/';
   }
@@ -211,6 +216,8 @@ static int file_create(const char *path) {
   int fd = open(path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0600);
   if (fd < 0)
     die("create %s: %s", path, strerror(errno));
+  if (create_hook)
+    create_hook(path);
   return fd;
 }
 

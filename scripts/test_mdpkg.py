@@ -174,6 +174,9 @@ def read_odc(data):
     return records
 
 
+SCRIPTS_RESERVED = ".mdpkg-scripts"
+
+
 class InstallerTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix="mdpkg-tests-")
@@ -201,7 +204,7 @@ class InstallerTests(unittest.TestCase):
         return result
 
     def install(self, ok=True, *extra):
-        return self.run_cli("install", "--pkg", str(self.pkg), "--root", str(self.root), *extra, ok=ok)
+        return self.run_cli("install", "-pkg", str(self.pkg), "-root", str(self.root), *extra, ok=ok)
 
     def original_intact(self):
         self.assertEqual(sorted(p.name for p in self.root.iterdir()), ["base-file"])
@@ -271,12 +274,79 @@ class InstallerTests(unittest.TestCase):
 
     def test_root_refusals(self):
         self.package()
-        self.run_cli("install", "--pkg", str(self.pkg), "--root", "/", ok=False)
         link = self.base / "root-link"
         link.symlink_to(self.root, target_is_directory=True)
-        self.run_cli("install", "--pkg", str(self.pkg), "--root", str(link), ok=False)
-        self.run_cli("install", "--pkg", str(self.pkg), "--root", "/nix/store/fake-root", ok=False)
+        self.run_cli("install", "-pkg", str(self.pkg), "-root", str(link), ok=False)
+        self.run_cli("install", "-pkg", str(self.pkg), "-root", "/nix/store/fake-root", ok=False)
         self.original_intact()
+
+    def live(self, *args, ok=True):
+        """The running root is "/", which a test must never install into:
+        MDPKG_TEST_LIVE_ROOT makes mdpkg treat the temporary root that way."""
+        return self.run_cli(*args, ok=ok, env={"MDPKG_TEST_LIVE_ROOT": str(self.root)})
+
+    def test_live_install_in_place_with_direct_scripts(self):
+        files = component_files(self.entries, script=b"#!/bin/sh\nexit 0\n")
+        files["Scripts"] = gzip.compress(cpio([
+            ("./postinstall", stat.S_IFREG | 0o755,
+             b'#!/bin/sh\n[ -n "$COMMAND_LINE_INSTALL" ] || exit 3\n'
+             b'[ "$3" = "$DSTVOLUME" ] && [ "$2" = "$DSTROOT" ] || exit 4\n'
+             b'[ "$1" = "$PACKAGE_PATH" ] || exit 5\n'
+             b'echo "$2" > "$DSTVOLUME/script-ran"\n'),
+        ]))
+        self.pkg.write_bytes(xar(files))
+        before = (self.root / "base-file").stat()
+        self.live("-pkg", str(self.pkg), "-target", str(self.root))
+        self.assertEqual((self.root / "usr/bin/tool").read_bytes(), b"hello\n")
+        self.assertEqual(os.readlink(self.root / "usr/bin/alias"), "tool")
+        self.assertEqual((self.root / "script-ran").read_text().strip(), str(self.root.resolve()))
+        self.assertEqual((self.root / "base-file").stat().st_ino, before.st_ino)
+        self.assertTrue((self.root / "private/var/db/receipts/org.minidarwin.test.plist").exists())
+        self.assertFalse(Path(str(self.root) + ".mdpkg-transaction").exists())
+        self.assertFalse((self.root / SCRIPTS_RESERVED).exists())
+        self.live("-pkg", str(self.pkg), "-target", str(self.root), ok=False)
+
+    def test_live_failure_removes_what_was_created(self):
+        self.package(script=b"#!/bin/sh\nexit 9\n")
+        self.live("-pkg", str(self.pkg), "-target", str(self.root), ok=False)
+        self.assertFalse((self.root / "usr").exists())
+        self.assertFalse((self.root / "private/var/db/receipts").exists())
+        self.assertEqual((self.root / "base-file").read_bytes(), b"unchanged")
+
+    def test_live_collision_changes_nothing(self):
+        (self.root / "usr/bin").mkdir(parents=True)
+        (self.root / "usr/bin/tool").write_bytes(b"mine")
+        self.package()
+        self.live("-pkg", str(self.pkg), "-target", str(self.root), ok=False)
+        self.assertEqual((self.root / "usr/bin/tool").read_bytes(), b"mine")
+        self.assertFalse((self.root / "usr/bin/alias").exists())
+
+    def test_live_follows_absolute_links_inside_the_root_only(self):
+        (self.root / "private/etc").mkdir(parents=True)
+        (self.root / "etc").symlink_to("/private/etc")
+        self.package([("./etc", stat.S_IFDIR | 0o755, b""), ("./etc/conf", stat.S_IFREG | 0o644, b"x")])
+        self.live("-pkg", str(self.pkg), "-target", str(self.root))
+        self.assertEqual((self.root / "private/etc/conf").read_bytes(), b"x")
+        # Offline, the same link is a way out of the root and is refused.
+        offline = self.base / "offline"
+        offline.mkdir()
+        (offline / "private").mkdir()
+        (offline / "private/etc").mkdir()
+        (offline / "etc").symlink_to("/private/etc")
+        self.run_cli("-pkg", str(self.pkg), "-target", str(offline), ok=False)
+
+    def test_live_requires_root_for_the_real_one(self):
+        self.package()
+        if os.geteuid() != 0:
+            self.run_cli("-pkg", str(self.pkg), "-target", "/", ok=False)
+
+    def test_macos_style_options(self):
+        self.package()
+        self.assertIn("org.minidarwin.test", self.run_cli("-pkginfo", "-pkg", str(self.pkg)).stdout)
+        self.run_cli("-pkg", str(self.pkg), "-target", str(self.root))
+        self.assertTrue((self.root / "usr/bin/tool").exists())
+        self.run_cli("--pkg", str(self.pkg), "--root", str(self.root), ok=False)
+        self.run_cli("-pkg", str(self.pkg), "-target", str(self.root), "-root", str(self.root), ok=False)
 
     def test_scripts_require_runner_and_failure_rolls_back(self):
         self.package(script=b"#!/bin/sh\nexit 0\n")
@@ -285,7 +355,7 @@ class InstallerTests(unittest.TestCase):
         runner = self.base / "failing-runner"
         runner.write_text("#!/bin/sh\nexit 7\n")
         runner.chmod(0o755)
-        self.install(False, "--script-runner", str(runner))
+        self.install(False, "-script-runner", str(runner))
         self.original_intact()
         self.assertFalse(Path(str(self.root) + ".mdpkg-transaction").exists())
 
@@ -314,7 +384,7 @@ else:
     Path(root, 'usr/bin/tool').write_text('post')
 """)
         runner.chmod(0o755)
-        self.install(True, "--script-runner", str(runner))
+        self.install(True, "-script-runner", str(runner))
         inventory = plistlib.loads((self.root / "private/var/db/mdpkg/org.minidarwin.test.inventory.plist").read_bytes())
         changes = {(entry["path"], entry["change"]) for entry in inventory["Entries"] if entry["origin"] == "script"}
         self.assertIn(("pre-created", "created"), changes)
@@ -374,7 +444,7 @@ else:
                     distribution.replace("</installer-script>", "<installation-check script='check()'/></installer-script>")]:
             files["Distribution"] = bad.encode()
             self.pkg.write_bytes(xar(files))
-            self.run_cli("inspect", "--pkg", str(self.pkg), ok=False)
+            self.run_cli("inspect", "-pkg", str(self.pkg), ok=False)
 
     def test_checksum_algorithms(self):
         files = component_files(self.entries)
@@ -382,11 +452,11 @@ else:
                                  ("sha512", True), ("sha256", False)]:
             with self.subTest(algorithm=algorithm, named=named):
                 self.pkg.write_bytes(xar(files, algorithm, named))
-                self.run_cli("inspect", "--pkg", str(self.pkg))
+                self.run_cli("inspect", "-pkg", str(self.pkg))
         data = bytearray(xar(files, "sha256"))
         data[28:34] = b"sha512"  # header and TOC disagree
         self.pkg.write_bytes(data)
-        self.run_cli("inspect", "--pkg", str(self.pkg), ok=False)
+        self.run_cli("inspect", "-pkg", str(self.pkg), ok=False)
 
     def test_product_archive(self):
         files = {}
@@ -403,7 +473,7 @@ else:
             ("org.minidarwin.one", "Tool%20One.pkg"), ("org.minidarwin.two", "two.pkg"),
             extra='<options hostArchitectures="arm64,x86_64" customize="never"/>').encode()
         self.pkg.write_bytes(xar(files))
-        result = self.run_cli("inspect", "--pkg", str(self.pkg))
+        result = self.run_cli("inspect", "-pkg", str(self.pkg))
         self.assertIn("org.minidarwin.one 1.0 /: 2 payload entries", result.stdout)
         self.assertIn("host architectures (not enforced): arm64,x86_64", result.stdout)
         self.install()
@@ -461,7 +531,7 @@ else:
 
     def test_source_date_epoch(self):
         self.package()
-        self.run_cli("install", "--pkg", str(self.pkg), "--root", str(self.root),
+        self.run_cli("install", "-pkg", str(self.pkg), "-root", str(self.root),
                      env={"SOURCE_DATE_EPOCH": "86400"})
         receipt = plistlib.loads((self.root / "private/var/db/receipts/org.minidarwin.test.plist").read_bytes())
         self.assertEqual(receipt["InstallDate"], datetime.datetime(1970, 1, 2))
@@ -471,9 +541,9 @@ else:
         self.assertIn("usage:", self.run_cli("--help").stdout)
         self.package()
         self.run_cli(ok=False)
-        self.run_cli("inspect", "--pkg", str(self.pkg), "--root", str(self.root), ok=False)
-        self.run_cli("install", "--pkg", str(self.pkg), ok=False)
-        self.run_cli("install", "--pkg", str(self.pkg), "--pkg", str(self.pkg), ok=False)
+        self.run_cli("inspect", "-pkg", str(self.pkg), "-root", str(self.root), ok=False)
+        self.run_cli("install", "-pkg", str(self.pkg), ok=False)
+        self.run_cli("install", "-pkg", str(self.pkg), "-pkg", str(self.pkg), ok=False)
 
     def test_dtd_rejected(self):
         files = component_files(self.entries)
@@ -512,7 +582,7 @@ else:
         self.pkg = Path(os.environ["MC_PKG"])
         data = self.pkg.read_bytes()
         self.assertEqual(hashlib.sha256(data).hexdigest(), "5b047f602247de2b9cd9f4ed6f4b95fb9083a18a6435477dacbfac5f36bfa030")
-        result = self.run_cli("inspect", "--pkg", str(self.pkg))
+        result = self.run_cli("inspect", "-pkg", str(self.pkg))
         self.assertIn("org.rudix.pkg.mc 4.8.7-0 /: 392 payload entries; script postinstall", result.stdout)
         files = read_xar(self.pkg)
         self.assertEqual(len(read_odc(files["mcinstall.pkg/Payload"])), 392)

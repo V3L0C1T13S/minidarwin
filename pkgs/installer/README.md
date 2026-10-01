@@ -1,14 +1,20 @@
 # mdpkg
 
-`mdpkg` installs flat `.pkg` files into an offline directory tree, typically a
-writable copy of the MiniDarwin rootfs. It uses libxml2, zlib and
-LibreSSL/OpenSSL, not CoreFoundation or Apple's Installer, and it never
-installs into the running system.
+`mdpkg` installs flat `.pkg` files into a directory tree: the running root (`/`),
+which is how Rosetta 3 uses it on its MiniDarwin base system, or an offline
+tree, typically a writable copy of the MiniDarwin rootfs. It uses libxml2,
+zlib and LibreSSL/OpenSSL, not CoreFoundation or Apple's Installer.
+
+Options are spelled as in macOS's `installer`, with one dash:
 
 ```
-mdpkg inspect --pkg FILE
-mdpkg install --pkg FILE --root DIRECTORY [--script-runner EXECUTABLE]
+mdpkg -pkg FILE -target DIRECTORY [-script-runner EXECUTABLE]
+mdpkg -pkginfo -pkg FILE
+mdpkg -vers
 ```
+
+`-root` is a synonym of `-target` (`-target` is the macOS name). The older
+`mdpkg install ...` and `mdpkg inspect ...` forms take the same options.
 
 There are two builds of the same sources:
 
@@ -30,8 +36,9 @@ There are two builds of the same sources:
   `inspect` and not enforced: the root's architecture is not the host's.
 - **Payloads:** raw or gzip CPIO in odc, newc or crc format, holding regular
   files, directories and symlinks.
-- **Scripts:** `preflight`, `preinstall`, `postinstall` and `postflight`,
-  run through a script runner (below).
+- **Scripts:** `preflight`, `preinstall`, `postinstall` and `postflight`.
+  In the running root they are run directly; in an offline root, through a
+  script runner (below).
 
 Refused, before the root is touched: other compressions (pbzx, bzip2),
 Distribution JavaScript (`<script>`, `installation-check`, `volume-check`,
@@ -63,7 +70,41 @@ to the installing user and the requested owner is only recorded.
 
 ## Transactions
 
-`--root` must be a real directory (not a symlink, not `/`, not in the Nix
+## The running root
+
+`-target /` installs into the running root, in place: it cannot be copied
+and swapped, so there is no transaction. Run as root (otherwise refused), it
+
+1. validates the package and refuses collisions exactly as below, before
+   anything is written; absolute symlinks already in the root are followed
+   *within* it, since `/` is the root;
+2. holds an exclusive lock on `/private/var/db/mdpkg/.lock`;
+3. unpacks scripts into a private directory under `$TMPDIR`,
+   `/private/var/tmp` or `/tmp`, never into the root;
+4. writes payloads and receipts directly, journalling each directory, file
+   and link it creates (nothing existing is ever replaced).
+
+If anything fails, what the journal holds is removed. Not covered: what a
+script itself changed (a failed script's effects stay, and the inventory
+records no script changes in this mode, since hashing the whole running
+system is not feasible), and a killed or crashed mdpkg, which can leave a
+partial install with no receipt.
+
+Scripts are executed themselves, with `PATH=/usr/bin:/bin:/usr/sbin:/sbin`,
+`COMMAND_LINE_INSTALL`, `PACKAGE_PATH`, `DSTVOLUME` (`/`), `DSTROOT`,
+`INSTALLER_TEMP` and `TMPDIR`, and arguments `PACKAGE TARGET VOLUME`; they
+need their exec bit and a working interpreter in the system. MiniDarwin has
+no `/bin/sh` (its `sh` installs as `/usr/local/bin/ash`), so a `#!/bin/sh`
+script does not run there until one is provided. A `-script-runner` given
+with `-target /` is used instead of direct execution.
+
+The tests cannot install into the real `/`; they set
+`MDPKG_TEST_LIVE_ROOT=DIRECTORY` to make mdpkg treat that directory as the
+running root. It is not for any other use.
+
+## Offline roots
+
+`-target` must be a real directory (not a symlink, not `/`, not in the Nix
 store) whose parent is writable. mdpkg
 
 1. takes an exclusive lock on `ROOT.mdpkg-lock` (the file is left behind);
@@ -83,8 +124,8 @@ roots, not live systems.
 
 ## Script runners
 
-Packages with scripts need `--script-runner`; there is no fallback that runs
-scripts directly. A runner is invoked as
+Packages with scripts need `-script-runner` for an offline root; scripts are
+never run directly against one, since their absolute paths would hit the host. A runner is invoked as
 
 ```
 RUNNER SCRIPT WORKDIR PACKAGE TARGET STAGED_ROOT

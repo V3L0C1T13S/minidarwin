@@ -87,6 +87,9 @@ typedef struct {
 /* util.c */
 _Noreturn void die(const char *fmt, ...);
 extern void (*die_hook)(void);
+/* Called with every directory and file util.c creates, so a live install
+ * can undo them. */
+extern void (*create_hook)(const char *path);
 void *xcalloc(size_t count, size_t size);
 void *xrealloc(void *p, size_t count, size_t size);
 char *xstrdup(const char *s);

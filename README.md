@@ -91,11 +91,11 @@ All files are reproducible, and can be verified 1:1 from the build workflow too.
 You can install software with it, like so:
 
 ```bash
-nix run .#mdpkg -- inspect --pkg package.pkg
-nix run .#mdpkg -- install --pkg package.pkg --root ./my-root
+nix run .#mdpkg -- inspect -pkg package.pkg
+nix run .#mdpkg -- install -pkg package.pkg -target ./my-root
 ```
 
-Packages with install scripts need `--script-runner`; the host build ships a
+Packages with install scripts need `-script-runner`; the host build ships a
 `sandbox-exec` one. See [pkgs/installer/README.md](pkgs/installer/README.md)
 for what is supported, how installs are made transactional, and receipts.
 

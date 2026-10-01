@@ -10,7 +10,13 @@
  * interrupted between the two is rolled back (original/ is put back) by the
  * next invocation; one interrupted after both is completed. The original is
  * only deleted once the new tree is in place. Nothing guards against other
- * processes using ROOT meanwhile: roots are offline. */
+ * processes using ROOT meanwhile: roots are offline.
+ *
+ * The running root cannot be swapped, so installing into it is different: it
+ * is done in place, with no copy. Nothing is replaced (preflight has already
+ * refused collisions), every directory, file and link created is journalled,
+ * and a failure removes what the journal holds. What scripts did is not
+ * undone, and nor is a crash. */
 #include "mdpkg.h"
 
 #include <errno.h>
@@ -29,8 +35,12 @@
 
 static struct {
   char *root, *parent, *dir, *stage, *original;
-  int published;
+  int published, live;
 } tx;
+
+static char **journal; /* host paths created in a live install */
+static size_t journal_count;
+static char *live_tmp; /* script work area of a live install */
 
 static EntryList base_directories; /* modes and times to restore in stage */
 
@@ -200,9 +210,19 @@ static char *resolve_beneath(const char *base, const char *rel,
       if (len < 0)
         die("readlink %s: %s", host, strerror(errno));
       target[len] = 0;
-      if (*target == '/')
-        die("%s passes through an absolute symlink: %s", rel, next);
-      char *spliced = path_join(target, todo);
+      const char *relative = target;
+      if (*target == '/') {
+        /* In the running root an absolute link points inside it. */
+        if (!tx.live)
+          die("%s passes through an absolute symlink: %s", rel, next);
+        while (*relative == '/')
+          relative++;
+        free(done);
+        done = xstrdup("");
+        free(next);
+        next = NULL;
+      }
+      char *spliced = path_join(relative, todo);
       free(todo);
       todo = spliced;
       free(next);
@@ -264,8 +284,9 @@ static void preflight(Package *pkg, const char *runner) {
   for (size_t i = 0; i < pkg->count; i++) {
     Component *c = &pkg->components[i];
     for (int h = 0; h < HOOK_COUNT; h++)
-      if (c->hooks[h] && !runner)
-        die("%s has a %s script; pass an isolating --script-runner",
+      if (c->hooks[h] && !runner && !tx.live)
+        die("%s has a %s script; an offline root needs an isolating "
+            "-script-runner (scripts run directly only in the running root)",
             c->identifier, hook_names[h]);
     const char *records[][2] = {{RECEIPTS_DIR, ".plist"},
                                 {RECEIPTS_DIR, ".bom"},
@@ -406,6 +427,27 @@ static void restore_base_directories(void) {
   }
 }
 
+/* Where payloads and scripts act: the staged copy, or the root itself. */
+static const char *base_dir(void) { return tx.live ? tx.root : tx.stage; }
+
+static void journal_add(const char *path) {
+  journal = xrealloc(journal, journal_count + 1, sizeof(*journal));
+  journal[journal_count++] = xstrdup(path);
+}
+
+/* Undoes a live install's own creations, newest first. A directory a script
+ * filled is left in place. */
+static void journal_undo(void) {
+  for (size_t i = journal_count; i > 0; i--) {
+    struct stat st;
+    const char *p = journal[i - 1];
+    if (lstat(p, &st))
+      continue;
+    if (S_ISDIR(st.st_mode) ? rmdir(p) : unlink(p))
+      fprintf(stderr, "mdpkg: could not remove %s: %s\n", p, strerror(errno));
+  }
+}
+
 /* Writes ENTRIES beneath BASE. Existing directories are kept as they are;
  * anything else existing is a collision. Directories created here get their
  * packaged mode and time after their contents are in place. */
@@ -426,6 +468,8 @@ static void extract(EntryList *entries, const char *base) {
       if (!exists) {
         if (mkdir(path, 0700))
           die("mkdir %s: %s", path, strerror(errno));
+        if (tx.live)
+          journal_add(path);
         apply_ownership(path, e->uid, e->gid, 0);
         created[i] = 1;
       }
@@ -434,6 +478,8 @@ static void extract(EntryList *entries, const char *base) {
     else if (S_ISLNK(e->mode)) {
       if (symlink(e->link, path))
         die("symlink %s: %s", path, strerror(errno));
+      if (tx.live)
+        journal_add(path);
       apply_ownership(path, e->uid, e->gid, 1);
       set_times(path, t, t, 1);
     } else {
@@ -465,7 +511,7 @@ static void check_payload_symlinks(Component *c) {
     if (!e->link)
       continue;
     char *parent = path_parent(e->path), *target = path_join(parent, e->link);
-    free(resolve_beneath(tx.stage, target, 1));
+    free(resolve_beneath(base_dir(), target, 1));
     free(parent);
     free(target);
   }
@@ -480,19 +526,49 @@ static void run_hook(Component *c, int hook, const char *runner,
   if (!c->hooks[hook])
     return;
   char *script = path_join(workdir, c->hooks[hook]),
-       *target = path_join(tx.stage, c->location);
+       *target = path_join(base_dir(), c->location);
+  if (!runner && access(script, X_OK))
+    die("%s %s is not executable", c->identifier, hook_names[hook]);
   fprintf(stderr, "mdpkg: running %s %s\n", c->identifier, hook_names[hook]);
   fflush(NULL);
   pid_t pid = fork();
   if (pid < 0)
     die("fork: %s", strerror(errno));
   if (!pid) {
+    if (!runner) {
+      /* No runner: the running root is the root, so the script runs as
+       * Apple's installer runs it: itself, with a fixed environment, and
+       * PACKAGE TARGET VOLUME. */
+      char *env[7] = {0};
+      const char *const pairs[6][2] = {
+          {"PATH", "/usr/bin:/bin:/usr/sbin:/sbin"},
+          {"COMMAND_LINE_INSTALL", "1"},
+          {"PACKAGE_PATH", package},
+          {"DSTVOLUME", tx.root},
+          {"DSTROOT", target},
+          {"INSTALLER_TEMP", workdir}};
+      for (int i = 0; i < 6; i++) {
+        size_t n = strlen(pairs[i][0]) + strlen(pairs[i][1]) + 2;
+        env[i] = xcalloc(n, 1);
+        snprintf(env[i], n, "%s=%s", pairs[i][0], pairs[i][1]);
+      }
+      size_t tn = strlen(workdir) + 8;
+      char *tmp = xcalloc(tn, 1);
+      snprintf(tmp, tn, "TMPDIR=%s", workdir);
+      env[6] = tmp;
+      char *envp[8] = {env[0], env[1], env[2], env[3], env[4], env[5], env[6]};
+      char *argv[] = {script, (char *)package, target, tx.root, NULL};
+      if (chdir(workdir))
+        _exit(126);
+      execve(script, argv, envp);
+      _exit(127);
+    }
     if (chdir(workdir) || setenv("COMMAND_LINE_INSTALL", "1", 1) ||
         setenv("PACKAGE_PATH", package, 1) ||
-        setenv("DSTVOLUME", tx.stage, 1) || setenv("DSTROOT", target, 1) ||
+        setenv("DSTVOLUME", base_dir(), 1) || setenv("DSTROOT", target, 1) ||
         setenv("INSTALLER_TEMP", workdir, 1) || setenv("TMPDIR", workdir, 1))
       _exit(126);
-    execl(runner, runner, script, workdir, package, target, tx.stage,
+    execl(runner, runner, script, workdir, package, target, base_dir(),
           (char *)NULL);
     _exit(127);
   }
@@ -528,26 +604,33 @@ static void install_component(Package *pkg, Component *c, const char *runner,
    * there are scripts: hashing the whole root is not free. */
   EntryList changes = {0}, before = {0}, after = {0};
   if (any_hook(c, HOOK_PREFLIGHT, HOOK_PREINSTALL)) {
-    snapshot_tree(&before, tx.stage);
+    /* No snapshots of a live root: it is the whole running system. */
+    if (!tx.live)
+      snapshot_tree(&before, tx.stage);
     run_hook(c, HOOK_PREFLIGHT, runner, workdir, pkg->path);
     run_hook(c, HOOK_PREINSTALL, runner, workdir, pkg->path);
-    snapshot_tree(&after, tx.stage);
-    script_changes(&changes, &before, &after);
+    if (!tx.live) {
+      snapshot_tree(&after, tx.stage);
+      script_changes(&changes, &before, &after);
+    }
     entries_free(&before);
     entries_free(&after);
   }
-  extract(&c->payload, tx.stage);
+  extract(&c->payload, base_dir());
   check_payload_symlinks(c);
   if (any_hook(c, HOOK_POSTINSTALL, HOOK_POSTFLIGHT)) {
-    snapshot_tree(&before, tx.stage);
+    if (!tx.live)
+      snapshot_tree(&before, tx.stage);
     run_hook(c, HOOK_POSTINSTALL, runner, workdir, pkg->path);
     run_hook(c, HOOK_POSTFLIGHT, runner, workdir, pkg->path);
-    snapshot_tree(&after, tx.stage);
-    script_changes(&changes, &before, &after);
+    if (!tx.live) {
+      snapshot_tree(&after, tx.stage);
+      script_changes(&changes, &before, &after);
+    }
     entries_free(&before);
     entries_free(&after);
   }
-  receipts_write(tx.stage, pkg, c, &changes);
+  receipts_write(base_dir(), pkg, c, &changes);
   entries_free(&changes);
   free(workdir);
 }
@@ -569,7 +652,84 @@ static void publish(void) {
   die_hook = NULL;
 }
 
+static int same_directory(const char *a, const char *b) {
+  struct stat x, y;
+  return !lstat(a, &x) && !lstat(b, &y) && S_ISDIR(x.st_mode) &&
+         S_ISDIR(y.st_mode) && x.st_dev == y.st_dev && x.st_ino == y.st_ino;
+}
+
+/* ROOT names the running root if it is "/" (by identity, so "/." and "//"
+ * count, and a symlink to it does not). MDPKG_TEST_LIVE_ROOT names one more
+ * directory to treat that way, for tests: a live install of the real root is
+ * not something a test may do. */
+static int is_running_root(const char *root) {
+  const char *test = getenv("MDPKG_TEST_LIVE_ROOT");
+  return same_directory(root, "/") || (test && same_directory(root, test));
+}
+
+static void live_lock(void) {
+  char *rel = path_join(INVENTORY_DIR, ".lock");
+  path_parents(tx.root, rel, 1);
+  char *lock = path_join(tx.root, rel);
+  int fd = open(lock, O_CREAT | O_RDWR | O_NOFOLLOW | O_CLOEXEC, 0600);
+  struct stat st;
+  if (fd < 0 || fstat(fd, &st) || !S_ISREG(st.st_mode) ||
+      st.st_uid != geteuid() || st.st_nlink != 1)
+    die("unsafe lock file %s", lock);
+  if (flock(fd, LOCK_EX | LOCK_NB))
+    die("%s is locked by another mdpkg", tx.root);
+  free(lock);
+  free(rel);
+}
+
+static void rollback_live(void) {
+  journal_undo();
+  if (live_tmp && remove_tree(live_tmp, 0))
+    fprintf(stderr, "mdpkg: could not remove %s\n", live_tmp);
+  fputs("mdpkg: removed what this install had created; scripts' own changes "
+        "are not undone\n", stderr);
+}
+
+static void install_live(Package *pkg, const char *root, const char *runner) {
+  char resolved[PATH_MAX];
+  tx.live = 1;
+  tx.root = xstrdup(realpath(root, resolved) ? resolved : root);
+  if (!getenv("MDPKG_TEST_LIVE_ROOT") && geteuid())
+    die("installing into the running root requires root");
+  live_lock();
+  preflight(pkg, runner);
+
+  /* Scripts are unpacked outside the root: it is not ours to fill. */
+  const char *dirs[] = {getenv("TMPDIR"), "/private/var/tmp", "/tmp"};
+  for (size_t i = 0; i < 3 && !live_tmp; i++) {
+    struct stat st;
+    if (!dirs[i] || *dirs[i] != '/' || stat(dirs[i], &st) ||
+        !S_ISDIR(st.st_mode))
+      continue;
+    char *tmpl = path_join(dirs[i], "mdpkg.XXXXXX");
+    live_tmp = mkdtemp(tmpl);
+    if (!live_tmp)
+      free(tmpl);
+  }
+  if (!live_tmp)
+    die("no usable temporary directory for scripts");
+  die_hook = rollback_live;
+  create_hook = journal_add;
+  for (size_t i = 0; i < pkg->count; i++)
+    install_component(pkg, &pkg->components[i], runner, live_tmp);
+  create_hook = NULL;
+  die_hook = NULL;
+  if (remove_tree(live_tmp, 0))
+    fprintf(stderr, "mdpkg: could not remove %s\n", live_tmp);
+  sync();
+  printf("Installed %zu package(s) into %s\n", pkg->count, tx.root);
+}
+
 void install_package(Package *pkg, const char *root, const char *runner) {
+  if (is_running_root(root)) {
+    install_live(pkg, root, runner);
+    return;
+  }
   lock_and_recover(root);
   preflight(pkg, runner);
 
