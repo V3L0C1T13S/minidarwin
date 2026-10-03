@@ -5,8 +5,8 @@
 # test to [, hexdump to od, alias to each regular builtin) as symlinks, and its
 # scripts and files, in extraInstall.
 #
-# Not built: su (links libpam; and it is set-uid, which the rootfs format cannot say),
-# test helpers killall_test_prog and su_test_setauid.
+# su is built separately in pkgs/su (PAM and audit headers).
+# Not built: test helpers killall_test_prog and su_test_setauid.
 #
 # users is C++, so this package links with toolchainStage4 (see mk-cmds.nix).
 { lib

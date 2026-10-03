@@ -92,7 +92,7 @@ jobs:
           s='${{ matrix.scope }}'
           nix build --print-build-logs -o result-check \
             ${s}sdkTest ${s}runtimesTest ${s}libsystemTest ${s}libdispatchTest \
-            ${s}cxxLinkTest ${s}libxml2Test ${s}libxoTest ${s}topTest ${s}releaseTest
+            ${s}cxxLinkTest ${s}libxml2Test ${s}libxoTest ${s}topTest ${s}authTest ${s}releaseTest
 
       # Tarball, manifest, spec and bundle (docs/rootfs-spec.md). The
       # derivation already verified them against each other.

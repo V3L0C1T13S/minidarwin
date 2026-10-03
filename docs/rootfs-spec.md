@@ -183,6 +183,10 @@ Anything else is deliberately left out:
   Mach-O code signature is part of the file's content, so it is covered.
 * **`mode`** is a quoted four-digit octal string. Files are `"0644"` or
   `"0755"`, and directories are always `"0755"`. Nothing is set-id or sticky.
+  This includes `su` and `sudo`: their executables have no setuid bit, and
+  `/private/etc/sudoers` is normalized to `"0644"`, not sudo's expected
+  `"0440"`. Building and verifying these artifacts does not provision them
+  for privilege escalation.
   The reference verifier compares modes exactly. A consumer that installs the
   tree read-only on purpose should compare only the executable bit.
 * **`path`** is absolute. Each component is printable ASCII (0x20-0x7e)

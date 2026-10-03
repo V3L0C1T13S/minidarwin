@@ -429,6 +429,15 @@ lib.makeScope pkgs.newScope (self: with self; {
     toolchain = toolchainStage3;
   };
 
+  authHeaders = callPackage ./pkgs/auth/headers.nix { };
+  su = callPackage ./pkgs/su/su.nix {
+    toolchain = toolchainStage3;
+  };
+  sudo = callPackage ./pkgs/sudo/sudo.nix {
+    toolchain = toolchainStage3;
+  };
+  authTest = callPackage ./pkgs/auth/auth-test.nix { };
+
   # Independent pkg installer; bootstrap builds the same core in host world.
   installer = callPackage ./pkgs/installer/installer.nix {
     toolchain = toolchainStage3;

@@ -49,11 +49,13 @@
 , darwinPerl
 , zsh
 , ncursesTools
+, su
+, sudo
 , installer
 }:
 
 let
-  cmds = [ shellCmds fileCmds textCmds advCmds basicCmds systemCmds patchCmds miscCmds awk file curl top nano bash darwinPerl zsh ncursesTools installer ];
+  cmds = [ shellCmds fileCmds textCmds advCmds basicCmds systemCmds patchCmds miscCmds awk file curl top nano bash darwinPerl zsh ncursesTools su sudo installer ];
   members = [ libSystem libsystemTree2 libcxxDylib libcxxabiDylib copyfile removefile ncurses ncursesPanel terminfo certPem libedit libutil libsbuf libmd zlib bzip2 zip icu libxml2 libxo libressl openssl098 ] ++ cmds;
 
   # Union of passthru.allowUndefined from all members.
@@ -134,6 +136,10 @@ mkDarwinPackage {
     done
     for f in /bin/df /usr/bin/wc /usr/bin/last /usr/bin/w /usr/bin/uptime /usr/bin/apply; do
       [ -e "$out$f" ] || { echo "rootfs: missing utility $f" >&2; exit 1; }
+    done
+    for f in /usr/bin/su /usr/bin/sudo /usr/bin/sudoedit /usr/sbin/visudo \
+      /private/etc/pam.d/su /private/etc/pam.d/sudo /private/etc/sudoers; do
+      [ -e "$out$f" ] || { echo "rootfs: missing authentication file $f" >&2; exit 1; }
     done
     for f in /usr/lib/libcrypto.0.9.8.dylib /usr/lib/libssl.0.9.8.dylib \
       /usr/local/openssl-0.9.8 /System/Library/OpenSSL; do

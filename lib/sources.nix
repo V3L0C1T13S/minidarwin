@@ -74,6 +74,15 @@ in
   dyld = apple "dyld" "dyld-1378"
     "sha256-1Q+FQmTIz6fU8BdyA6qF75mvTKfIe2bsysVK7762+D0=";
 
+  sudo = apple "sudo" "sudo-114.100.11"
+    "sha256-nwHzNeb2psd8JHO+sicIu3Gh8xivVE2NOCQJZwcDFig=";
+  # Headers only: Apple's last released OpenPAM/OpenBSM sources, outside
+  # the macOS 26 train. Authentication and audit implementations are absent.
+  OpenPAM = apple "OpenPAM" "OpenPAM-35"
+    "sha256-+z4Z38o0/CJkEdJE2RX/gP5vby9wQ/ERmUBVVAw3NBo=";
+  OpenBSM = apple "OpenBSM" "OpenBSM-21"
+    "sha256-WnlcTUvVgxNuxfW56J0zq7PAxuUIC8TQcAkWrQBWdj0=";
+
   shell_cmds = apple "shell_cmds" "shell_cmds-329"
     "sha256-mZ8DuxAMrv96gDnIG3nNXY906wNVDmjymOv/t3wDr2Q=";
   file_cmds = apple "file_cmds" "file_cmds-479"
