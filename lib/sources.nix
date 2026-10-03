@@ -90,6 +90,16 @@ in
     "sha256-04uBS16nNrg73Fqh4Obev7nQDjTTlY4f5+pEv3i0FIU=";
   patch_cmds = apple "patch_cmds" "patch_cmds-75"
     "sha256-XoLEVrvu9pfHPalkBQDH0IfzcX8FLkcEBmW03cq2jQY=";
+  top = apple "top" "top-144"
+    "sha256-F+P7yRQw4qa73JmQrMVgy3lVQRDBrFDy9kkOUJ135ys=";
+  # Headers only for top's framework APIs; no host SDK or framework binaries.
+  # CF is the last released CoreFoundation source, outside the macOS 26 train.
+  CF = apple "CF" "CF-1153.18"
+    "sha256-QmRK+rElOswP4XNb4MrFC18dgO8+b8+zMsFVWQLDh74=";
+  IOKitUser = apple "IOKitUser" "IOKitUser-100231.120.3"
+    "sha256-ILdL0s0MTK7Yo54ulVik4l0XbAXptF4NlElbP7z54CY=";
+  IOStorageFamily = apple "IOStorageFamily" "IOStorageFamily-337.100.1"
+    "sha256-whybjI8XIaihvo16oLq6xP5pNRPZeG7Jdy5jbyWqG1k=";
   awk = apple "awk" "awk-40"
     "sha256-QqBivftpeKxcEEwQEx+Fkh8H8JAC8E684H2YHWPzx5k=";
   file = apple "file" "file-106"

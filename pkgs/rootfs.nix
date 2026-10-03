@@ -1,7 +1,7 @@
 # Stage 7: assembled rootfs (closed set of Mach-Os + whole-tree checks).
 # Contains libSystem (+ members), libc++.1.dylib, libc++abi.dylib and stage 6:
 # the shell_cmds, file_cmds, text_cmds, adv_cmds, basic_cmds, system_cmds,
-# patch_cmds and misc_cmds tools, awk, file, curl, nano/pico, bash, Perl,
+# patch_cmds and misc_cmds tools, awk, file, curl, top, nano/pico, bash, Perl,
 # zsh, bzip2, zip/unzip and ncurses' own; the libraries they link (libedit, libncurses,
 # libutil, libsbuf, libmd, libz, libbz2, ICU, libxml2, libxo); LibreSSL as primary TLS
 # and a complete OpenSSL 0.9.8 install under /compat/OS X/10.7; terminfo; and the
@@ -17,6 +17,8 @@
 , copyfile
 , removefile
 , ncurses
+, ncursesPanel
+, top
 , terminfo
 , certPem
 , libedit
@@ -51,13 +53,13 @@
 }:
 
 let
-  cmds = [ shellCmds fileCmds textCmds advCmds basicCmds systemCmds patchCmds miscCmds awk file curl nano bash darwinPerl zsh ncursesTools installer ];
-  members = [ libSystem libsystemTree2 libcxxDylib libcxxabiDylib copyfile removefile ncurses terminfo certPem libedit libutil libsbuf libmd zlib bzip2 zip icu libxml2 libxo libressl openssl098 ] ++ cmds;
+  cmds = [ shellCmds fileCmds textCmds advCmds basicCmds systemCmds patchCmds miscCmds awk file curl top nano bash darwinPerl zsh ncursesTools installer ];
+  members = [ libSystem libsystemTree2 libcxxDylib libcxxabiDylib copyfile removefile ncurses ncursesPanel terminfo certPem libedit libutil libsbuf libmd zlib bzip2 zip icu libxml2 libxo libressl openssl098 ] ++ cmds;
 
   # Union of passthru.allowUndefined from all members.
   declared =
     lib.foldl' (acc: p: acc // (p.allowUndefined or { })) { }
-      (lib.attrValues libsystemPass2 ++ [ libcxxDylib libcxxabiDylib copyfile removefile ncurses libedit libutil libsbuf libmd icu libxml2 libxo libressl openssl098 bzip2 zip ] ++ cmds);
+      (lib.attrValues libsystemPass2 ++ [ libcxxDylib libcxxabiDylib copyfile removefile ncurses ncursesPanel libedit libutil libsbuf libmd icu libxml2 libxo libressl openssl098 bzip2 zip ] ++ cmds);
 
   # Runtime-provided (dyld defines in loaded process, not in a library).
   runtimeProvided = [ "dyld_stub_binder" ];
@@ -97,6 +99,9 @@ mkDarwinPackage {
     [ -s $out/etc/ssl/cert.pem ] || { echo "rootfs: no /etc/ssl/cert.pem" >&2; exit 1; }
     [ -e $out/usr/lib/system/libdispatch.dylib ] || {
       echo "rootfs: missing libdispatch" >&2; exit 1; }
+    for f in /usr/bin/top /usr/share/man/man1/top.1 /usr/lib/libpanel.5.4.dylib; do
+      [ -e "$out$f" ] || { echo "rootfs: missing top file $f" >&2; exit 1; }
+    done
     for f in /usr/lib/libcrypto.dylib /usr/lib/libssl.dylib /usr/bin/openssl; do
       [ -e "$out$f" ] || { echo "rootfs: missing primary TLS file $f" >&2; exit 1; }
     done

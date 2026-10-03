@@ -50,6 +50,8 @@
             sdkStage4
             toolchainStage4
             ncurses
+            ncursesPanel
+            top
             terminfo
             certPem
             libedit
@@ -106,7 +108,7 @@
       checks = forAllSystems (system: pkgs:
         let scope = nativeScope pkgs;
         in {
-          inherit (scope) sdkTest runtimesTest libsystemTest libdispatchTest cxxLinkTest libxml2Test libxoTest releaseTest installerTest;
+          inherit (scope) sdkTest runtimesTest libsystemTest libdispatchTest cxxLinkTest libxml2Test libxoTest topTest releaseTest installerTest;
         });
 
       # Full set for nix eval; cross.<arch> retargets it.

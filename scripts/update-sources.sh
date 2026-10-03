@@ -124,6 +124,12 @@ if [ "$changed" = 1 ]; then
     libncurses pkgs/ncurses/ncurses-sources.nix
   gen_sources ncurses ncurses.xcodeproj/project.pbxproj \
     tic_static pkgs/ncurses/tic-sources.nix
+  gen_sources ncurses ncurses.xcodeproj/project.pbxproj \
+    libpanel pkgs/ncurses/panel-sources.nix
+  gen_sources top top.xcodeproj/project.pbxproj \
+    top pkgs/top/top-sources.nix
+  gen_sources top top.xcodeproj/project.pbxproj \
+    libtop pkgs/top/libtop-sources.nix
   gen_sources libedit libedit.xcodeproj/project.pbxproj \
     libedit pkgs/libedit/libedit-sources.nix
   gen_sources libutil libutil.xcodeproj/project.pbxproj \

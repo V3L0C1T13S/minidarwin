@@ -288,6 +288,13 @@ lib.makeScope pkgs.newScope (self: with self; {
   ncurses = callPackage ./pkgs/ncurses/ncurses.nix {
     toolchain = toolchainStage3;
   };
+  ncursesPanel = callPackage ./pkgs/ncurses/panel.nix {
+    toolchain = toolchainStage3;
+  };
+  top = callPackage ./pkgs/top/top.nix {
+    toolchain = toolchainStage3;
+  };
+  topTest = callPackage ./pkgs/top/top-test.nix { };
   libedit = callPackage ./pkgs/libedit/libedit.nix {
     toolchain = toolchainStage3;
   };
