@@ -9,6 +9,7 @@ import ctypes
 import datetime
 import gzip
 import hashlib
+import json
 import os
 from pathlib import Path
 import plistlib
@@ -199,7 +200,7 @@ class InstallerTests(unittest.TestCase):
 
     def run_cli(self, *args, ok=True, env=None):
         result = subprocess.run([self.binary, *args], capture_output=True, text=True,
-                                env=None if env is None else {**os.environ, **env})
+                                env=None if env is None else {**os.environ, **env}, timeout=15)
         self.assertEqual(result.returncode == 0, ok, result.stdout + result.stderr)
         return result
 
@@ -440,11 +441,349 @@ else:
         self.install()
         self.assertTrue((self.root / "usr/bin/tool").exists())
         for bad in [distribution.replace('<choice id="c">', '<choice id="c" selected="system.version()">'),
-                    distribution.replace("#component.pkg", "https://example.invalid/pkg"),
                     distribution.replace("</installer-script>", "<installation-check script='check()'/></installer-script>")]:
             files["Distribution"] = bad.encode()
             self.pkg.write_bytes(xar(files))
-            self.run_cli("inspect", "-pkg", str(self.pkg), ok=False)
+            self.assertIn("unresolved", self.run_cli("inspect", "-pkg", str(self.pkg)).stdout)
+            self.run_cli("inspect", "-pkg", str(self.pkg), "-target", str(self.root), ok=False)
+        files["Distribution"] = distribution.replace("#component.pkg", "https://example.invalid/pkg").encode()
+        self.pkg.write_bytes(xar(files))
+        self.run_cli("inspect", "-pkg", str(self.pkg), ok=False)
+
+    def js_package(self, *, script="", check="true", volume="true", choice="",
+                   active="true", extra="", components=None):
+        files = {}
+        components = components or [("org.minidarwin.test", "component.pkg", self.entries)]
+        for ident, directory, entries in components:
+            files.update({directory + "/" + name: data
+                          for name, data in component_files(entries, identifier=ident).items()})
+        dist = ET.Element("installer-gui-script")
+        ET.SubElement(dist, "script").text = script
+        ET.SubElement(dist, "installation-check", script=check)
+        ET.SubElement(dist, "volume-check", script=volume)
+        outline = ET.SubElement(dist, "choices-outline")
+        for i, (ident, directory, _) in enumerate(components):
+            ET.SubElement(outline, "line", choice=f"c{i}")
+            node = ET.SubElement(dist, "choice", id=f"c{i}", title=f"Choice {i}",
+                                 description="Description")
+            if choice:
+                node.set("selected", choice)
+            ET.SubElement(node, "pkg-ref", id=ident)
+            ET.SubElement(dist, "pkg-ref", id=ident, version="1.0", active=active).text = "#" + directory
+        if extra:
+            dist.append(ET.fromstring(extra))
+        files["Distribution"] = ET.tostring(dist)
+        self.pkg.write_bytes(xar(files))
+        return files, dist
+
+    def js_inspect(self, ok=True):
+        return self.run_cli("-pkginfo", "-pkg", str(self.pkg), "-target", str(self.root), ok=ok)
+
+    def root_state(self):
+        return {str(p.relative_to(self.root)): (p.lstat().st_mode,
+                os.readlink(p) if p.is_symlink() else p.read_bytes() if p.is_file() else None)
+                for p in self.root.rglob("*")}
+
+    def test_js_shared_script_checks_and_choice_context(self):
+        self.js_package(script="let calls=0; function check(){ calls++; return calls === 1; }",
+                        check="check()", volume="calls === 1",
+                        choice="my.title === 'Choice 0' && my.description === 'Description' && "
+                               "my.packages[0].identifier === 'org.minidarwin.test' && "
+                               "my.packages[0].version === '1.0' && choices.c0 === my")
+        self.install()
+        self.assertTrue((self.root / "usr/bin/tool").exists())
+
+    def test_js_cdata_and_escaped_script(self):
+        files, dist = self.js_package(script="function yes(){ return 1 < 2 && true; }", check="yes()")
+        self.assertIn(b"&lt;", files["Distribution"])
+        self.js_inspect()
+        script = dist.find("script")
+        script.text = "PLACEHOLDER"
+        files["Distribution"] = ET.tostring(dist).replace(b"PLACEHOLDER",
+            b"<![CDATA[function yes(){ return 1 < 2 && true; }]]>")
+        self.pkg.write_bytes(xar(files))
+        self.js_inspect()
+        self.original_intact()
+
+    def test_js_checks_reject_before_writes_and_report_result(self):
+        for name in ["installation", "volume"]:
+            with self.subTest(check=name):
+                kwargs = {"check" if name == "installation" else "volume": "reject()"}
+                self.js_package(script="function reject(){my.result.type='Fatal'; "
+                    "my.result.title='No install'; my.result.message='Wrong volume'; return false;}", **kwargs)
+                result = self.install(ok=False)
+                self.assertIn(name + "-check", result.stderr)
+                self.assertIn("No install: Wrong volume", result.stderr)
+                self.original_intact()
+                self.assertFalse(Path(str(self.root) + ".mdpkg-transaction").exists())
+                self.js_inspect(ok=False)
+
+    def test_js_warning_continues_and_result_is_reset(self):
+        self.js_package(script="function warn(){my.result.type='Warn'; my.result.title='Notice';"
+            "my.result.message='Continue'; return false;} function volume(){"
+            "return my.result.type === '' && my.result.title === '' && my.result.message === '';}",
+            check="warn()", volume="volume()")
+        result = self.install()
+        self.assertIn("warning: Notice: Continue", result.stderr)
+        self.assertTrue((self.root / "usr/bin/tool").exists())
+
+    def test_js_inspection_is_read_only_and_target_free_does_not_execute(self):
+        self.js_package(script="throw new Error('top level executed');")
+        result = self.run_cli("inspect", "-pkg", str(self.pkg))
+        self.assertIn("selection unresolved", result.stdout)
+        self.assertIn("org.minidarwin.test 1.0", result.stdout)
+        self.assertNotIn("payload entries", result.stdout)
+        self.original_intact()
+        self.assertFalse(Path(str(self.root) + ".mdpkg-lock").exists())
+        self.assertIn("top level executed", self.js_inspect(ok=False).stderr)
+        self.js_package(check="system.files.fileExistsAtPath(my.target.mountpoint + '/base-file')")
+        before = self.root_state()
+        self.assertIn("payload entries", self.js_inspect().stdout)
+        self.assertEqual(before, self.root_state())
+        self.assertFalse(Path(str(self.root) + ".mdpkg-lock").exists())
+        self.assertFalse(Path(str(self.root) + ".mdpkg-transaction").exists())
+
+    def test_js_syntax_errors_are_caught_without_target(self):
+        for kwargs in [{"script": "function broken( {"}, {"choice": "true &&"},
+                       {"check": "check("}, {"active": "true &&"}]:
+            with self.subTest(kwargs=kwargs):
+                self.js_package(**kwargs)
+                self.assertIn("SyntaxError", self.run_cli("inspect", "-pkg", str(self.pkg), ok=False).stderr)
+                self.original_intact()
+
+    def test_js_fixed_point_and_selected_receipts(self):
+        entries = lambda name: [(f"./{name}", stat.S_IFREG | 0o644, name.encode())]
+        components = [(f"org.minidarwin.{name}", name + ".pkg", entries(name)) for name in ["one", "two", "three"]]
+        files, dist = self.js_package(components=components)
+        nodes = dist.findall("choice")
+        nodes[0].set("selected", "choices.c1.selected")
+        nodes[1].set("selected", "choices.c2.selected")
+        nodes[2].set("selected", "false")
+        # A fourth, selected package proves a nonempty stable result.
+        ET.SubElement(dist.find("choices-outline"), "line", choice="c3")
+        choice = ET.SubElement(dist, "choice", id="c3", enabled="false", visible="false")
+        ET.SubElement(choice, "pkg-ref", id="org.minidarwin.keep")
+        ET.SubElement(dist, "pkg-ref", id="org.minidarwin.keep").text = "#keep.pkg"
+        files.update({"keep.pkg/" + name: data for name, data in component_files(entries("keep"),
+                      identifier="org.minidarwin.keep").items()})
+        files["Distribution"] = ET.tostring(dist)
+        self.pkg.write_bytes(xar(files))
+        self.install()
+        self.assertTrue((self.root / "keep").exists())
+        for name in ["one", "two", "three"]:
+            self.assertFalse((self.root / name).exists())
+        receipts = self.root / "private/var/db/receipts"
+        self.assertEqual(sorted(p.name for p in receipts.glob("*.plist")), ["org.minidarwin.keep.plist"])
+
+    def test_js_initial_flags_and_explicit_selection(self):
+        files, dist = self.js_package(choice="!my.enabled && !my.visible")
+        node = dist.find("choice")
+        for key in ["start_selected", "start_enabled", "start_visible"]:
+            node.set(key, "false")
+        files["Distribution"] = ET.tostring(dist)
+        self.pkg.write_bytes(xar(files))
+        self.install()
+        self.assertTrue((self.root / "usr/bin/tool").exists())
+
+    def test_js_unstable_selection(self):
+        self.js_package(choice="!my.selected")
+        self.assertIn("64 passes", self.install(ok=False).stderr)
+        self.original_intact()
+
+    def test_js_merged_inactive_reference(self):
+        components = [("org.minidarwin.one", "one.pkg", [("./one", stat.S_IFREG | 0o644, b"one")]),
+                      ("org.minidarwin.two", "two.pkg", [("./two", stat.S_IFREG | 0o644, b"two")])]
+        files, dist = self.js_package(components=components)
+        first = dist.findall("pkg-ref")[0]
+        del first.attrib["active"]
+        dist.findall("choice")[0].find("pkg-ref").set("active", "system.compareVersions('1.0', '2') > 0")
+        # An inactive component's payload must not be decoded.
+        files["one.pkg/Payload"] = b"not cpio"
+        files["Distribution"] = ET.tostring(dist)
+        self.pkg.write_bytes(xar(files))
+        self.install()
+        self.assertFalse((self.root / "one").exists())
+        self.assertTrue((self.root / "two").exists())
+
+    def test_static_inactive_reference_and_initial_selection(self):
+        files, dist = self.js_package(components=[
+            ("org.minidarwin.one", "one.pkg", [("./one", stat.S_IFREG | 0o644, b"one")]),
+            ("org.minidarwin.two", "two.pkg", [("./two", stat.S_IFREG | 0o644, b"two")])])
+        for node in [*dist.findall("script"), *dist.findall("installation-check"), *dist.findall("volume-check")]:
+            dist.remove(node)
+        dist.findall("pkg-ref")[0].set("active", "false")
+        files["Distribution"] = ET.tostring(dist)
+        self.pkg.write_bytes(xar(files))
+        self.install()
+        self.assertFalse((self.root / "one").exists())
+        self.assertTrue((self.root / "two").exists())
+
+    def test_js_helpers_versions_and_sysctl(self):
+        self.js_package(check="helpers()", script="""
+            function helpers() {
+              system.log('helper fixture');
+              let versions = [['1','1.0.0',0], ['1.02','1.2',0], ['10.3.1','10.4',-1],
+                ['1.10','1.9',1], ['999999999999999999999','2',1], ['0.0','0',0]];
+              if (!versions.every(v => system.compareVersions(v[0],v[1]) === v[2])) return false;
+              if (system.propertiesOf({a:1,b:2}).sort().join(',') !== 'a,b') return false;
+              return typeof system.sysctl('hw.machine') === 'string' &&
+                typeof system.sysctl('hw.model') === 'string' && system.sysctl('hw.ncpu') > 0 &&
+                system.sysctl('hw.memsize') > 0 && typeof system.sysctl('kern.osrelease') === 'string' &&
+                typeof system.sysctl('kern.osversion') === 'string';
+            }
+        """)
+        self.assertIn("JS: helper fixture", self.js_inspect().stderr)
+        self.original_intact()
+
+    def test_js_host_and_target_metadata_and_receipts(self):
+        target_version = self.root / "System/Library/CoreServices/SystemVersion.plist"
+        target_version.parent.mkdir(parents=True)
+        target_version.write_bytes(plistlib.dumps({"ProductVersion": "999.1", "ProductBuildVersion": "test"}))
+        receipt = self.root / "private/var/db/receipts/org.example.existing.plist"
+        receipt.parent.mkdir(parents=True)
+        receipt.write_bytes(plistlib.dumps({"PackageIdentifier": "org.example.existing", "PackageVersion": "2.1"}))
+        self.js_package(check="metadata()", script="""
+            function metadata() {
+              let host = system.version;
+              return host.ProductVersion !== '999.1' && typeof host.ProductVersion === 'string' &&
+                my.target.systemVersion === '999.1' && my.target.availableKilobytes > 0 &&
+                my.target.receiptForIdentifier('org.example.existing').PackageVersion === '2.1' &&
+                my.target.receiptForIdentifier('org.example.missing') === null;
+            }
+        """)
+        # Nix's sandbox may not expose host SystemVersion.plist; assert the
+        # distinction directly when outside it and missing-host semantics inside it.
+        if not Path("/System/Library/CoreServices/SystemVersion.plist").exists():
+            files, dist = self.js_package(check="system.version === null && my.target.systemVersion === '999.1' && "
+                "my.target.availableKilobytes > 0 && my.target.receiptForIdentifier('org.example.existing').PackageVersion === '2.1'")
+        before = self.root_state()
+        self.js_inspect()
+        self.assertEqual(before, self.root_state())
+
+    def test_js_missing_target_version_does_not_use_host(self):
+        self.js_package(check="my.target.systemVersion === null && "
+            "my.target.receiptForIdentifier('org.example.missing') === null")
+        self.js_inspect()
+        self.original_intact()
+
+    def test_js_xml_plist_types_and_bundle_reads(self):
+        value = {"s": "text & < >", "i": -42, "r": 1.25, "b": True, "n": False,
+                 "a": [1, "two"], "nested": {"__proto__": "safe"}, "data": b"\x00\xff\x01",
+                 "empty": b"", "date": datetime.datetime(2020, 1, 2, 3, 4, 5)}
+        (self.root / "values.plist").write_bytes(plistlib.dumps(value))
+        bundle = self.root / "Example.app/Contents"
+        bundle.mkdir(parents=True)
+        (bundle / "Info.plist").write_bytes(plistlib.dumps({"CFBundleIdentifier": "org.example.app"}))
+        self.js_package(check="plists()", script="""
+            function plists() {
+              let base = my.target.mountpoint;
+              let p = system.files.plistAtPath(base + '/values.plist');
+              return p.s === 'text & < >' && p.i === -42 && p.r === 1.25 && p.b && !p.n &&
+                p.a[1] === 'two' && p.nested.__proto__ === 'safe' && p.data instanceof Uint8Array &&
+                p.data.length === 3 && p.data[1] === 255 && p.empty.length === 0 &&
+                p.date.toISOString() === '2020-01-02T03:04:05.000Z' &&
+                system.files.bundleAtPath(base + '/Example.app').CFBundleIdentifier === 'org.example.app' &&
+                system.files.bundleAtPath(base + '/Missing.app') === null &&
+                system.files.plistAtPath(base + '/missing.plist') === null &&
+                !system.files.fileExistsAtPath(base + '/missing') && system.files.fileExistsAtPath(base);
+            }
+        """)
+        before = self.root_state()
+        self.js_inspect()
+        self.assertEqual(before, self.root_state())
+
+    def test_js_binary_malformed_and_hostile_plists(self):
+        values = [plistlib.dumps({"x": 1}, fmt=plistlib.FMT_BINARY), b"<plist><dict><key>x</key></dict></plist>",
+            b'<!DOCTYPE plist [<!ENTITY x SYSTEM "file:///etc/passwd">]><plist><string>&x;</string></plist>',
+            b'<plist><dict><key>x</key><true/><key>x</key><false/></dict></plist>',
+            b'<plist><integer>1oops</integer></plist>', b'<plist><data>bad?</data></plist>',
+            b'<plist><date>2020-02-31T03:04:05Z</date></plist>',
+            b'<plist><dict><key>x</key>garbage<string>y</string></dict></plist>']
+        for value in values:
+            with self.subTest(value=value[:50]):
+                (self.root / "bad.plist").write_bytes(value)
+                self.js_package(check="system.files.plistAtPath(my.target.mountpoint + '/bad.plist') !== null")
+                before = self.root_state()
+                self.js_inspect(ok=False)
+                self.assertEqual(before, self.root_state())
+
+    def test_js_confined_target_reads_and_aliases(self):
+        (self.root / "etc").symlink_to("private/etc")
+        private = self.root / "private/etc"
+        private.mkdir(parents=True)
+        (private / "safe.plist").write_bytes(plistlib.dumps({"ok": True}))
+        self.js_package(check="system.files.plistAtPath(my.target.mountpoint + '/etc/safe.plist').ok")
+        self.js_inspect()
+        outside = self.base / "outside.plist"
+        outside.write_bytes(plistlib.dumps({"ok": True}))
+        (self.root / "escape.plist").symlink_to("../outside.plist")
+        (self.root / "absolute.plist").symlink_to(str(outside))
+        for path in ["escape.plist", "absolute.plist"]:
+            for prefix in [str(self.root), str(self.root.resolve())]:
+                with self.subTest(path=path, prefix=prefix):
+                    # JSON supplies exact JS quoting, including spaces.
+                    self.js_package(check=f"system.files.plistAtPath({json.dumps(prefix + '/' + path)}).ok")
+                    before = self.root_state()
+                    self.assertRegex(self.js_inspect(ok=False).stderr, "root|absolute symlink")
+                    self.assertEqual(before, self.root_state())
+
+    def test_js_unsupported_apis_are_explicit(self):
+        for expression in ["system.run('x')", "system.runOnce('x')", "system.localizedString('x')",
+            "system.defaults.foo", "system.applications.foo", "system.ioregistry.foo", "system.users",
+            "my.packageUpgradeAction", "system.sysctl('kern.unsupported')",
+            "system.compareVersions('1beta','2')"]:
+            with self.subTest(expression=expression):
+                self.js_package(choice=expression)
+                result = self.install(ok=False)
+                self.assertRegex(result.stderr, "unsupported|supports numeric")
+                self.original_intact()
+
+    def test_js_limits_and_missing_module_access(self):
+        cases = [("while(true){}", "interrupted"),
+                 ("let a=[]; while(true){a.push('x'.repeat(1000000))}", "out of memory"),
+                 ("function f(){return f()} f()", "stack overflow"),
+                 ("std.open('x')", "std"), ("os.exec(['true'])", "os")]
+        for script, diagnostic in cases:
+            with self.subTest(script=script):
+                self.js_package(script=script)
+                result = self.install(ok=False)
+                self.assertIn(diagnostic, result.stderr)
+                self.original_intact()
+                self.assertFalse(Path(str(self.root) + ".mdpkg-transaction").exists())
+
+    def test_js_shared_deadline_and_async_jobs(self):
+        self.js_package(script="function spin(){let end=Date.now()+3000;"
+            "while(Date.now()<end){} return true;}", check="spin()", volume="spin()")
+        self.assertRegex(self.install(ok=False).stderr, "interrupted|time limit")
+        self.original_intact()
+        for script in ["Promise.resolve().then(() => true)", "import('std')"]:
+            with self.subTest(script=script):
+                self.js_package(script=script)
+                self.assertIn("unsupported", self.install(ok=False).stderr)
+                self.original_intact()
+
+    def test_js_live_checks_run_before_lock_and_confine_absolute_links(self):
+        self.js_package(check="false")
+        self.run_cli("install", "-pkg", str(self.pkg), "-target", str(self.root), ok=False,
+                     env={"MDPKG_TEST_LIVE_ROOT": str(self.root)})
+        self.original_intact()
+        (self.root / "etc").symlink_to("/private/etc")
+        (self.root / "private/etc").mkdir(parents=True)
+        (self.root / "private/etc/value.plist").write_bytes(plistlib.dumps({"ok": True}))
+        self.js_package(check="system.files.plistAtPath(my.target.mountpoint + '/etc/value.plist').ok")
+        self.run_cli("install", "-pkg", str(self.pkg), "-target", str(self.root),
+                     env={"MDPKG_TEST_LIVE_ROOT": str(self.root)})
+        self.assertTrue((self.root / "usr/bin/tool").exists())
+
+    def test_js_distribution_structure_rejections(self):
+        for extra in ["<script src='outside.js'/>", "<installation-check script='true'/>",
+                      "<choice id='c0'/>", "<locator/>"]:
+            with self.subTest(extra=extra):
+                self.js_package(extra=extra)
+                self.run_cli("inspect", "-pkg", str(self.pkg), ok=False)
+                self.original_intact()
+        files, dist = self.js_package(choice="1 < 2", extra="<options require-scripts='false'/>")
+        self.run_cli("inspect", "-pkg", str(self.pkg), ok=False)
 
     def test_checksum_algorithms(self):
         files = component_files(self.entries)
@@ -541,7 +880,8 @@ else:
         self.assertIn("usage:", self.run_cli("--help").stdout)
         self.package()
         self.run_cli(ok=False)
-        self.run_cli("inspect", "-pkg", str(self.pkg), "-root", str(self.root), ok=False)
+        self.run_cli("inspect", "-pkg", str(self.pkg), "-root", str(self.root))
+        self.run_cli("inspect", "-pkg", str(self.pkg), "-script-runner", str(self.binary), ok=False)
         self.run_cli("install", "-pkg", str(self.pkg), ok=False)
         self.run_cli("install", "-pkg", str(self.pkg), "-pkg", str(self.pkg), ok=False)
 

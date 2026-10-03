@@ -3,13 +3,14 @@
 `mdpkg` installs flat `.pkg` files into a directory tree: the running root (`/`),
 which is how Rosetta 3 uses it on its MiniDarwin base system, or an offline
 tree, typically a writable copy of the MiniDarwin rootfs. It uses libxml2,
-zlib and LibreSSL/OpenSSL, not CoreFoundation or Apple's Installer.
+zlib, LibreSSL/OpenSSL and an embedded QuickJS engine, not CoreFoundation
+or Apple's Installer.
 
 Options are spelled as in macOS's `installer`, with one dash:
 
 ```
 mdpkg -pkg FILE -target DIRECTORY [-script-runner EXECUTABLE]
-mdpkg -pkginfo -pkg FILE
+mdpkg -pkginfo -pkg FILE [-target DIRECTORY]
 mdpkg -vers
 ```
 
@@ -31,7 +32,7 @@ There are two builds of the same sources:
   MD5, SHA-256 or SHA-512) are verified. Signatures are not checked:
   checksums detect corruption, they do not establish who made the package.
 - **Packages:** a bare component package, or a product archive whose
-  Distribution statically selects embedded components (`#name.pkg`
+  Distribution selects embedded components (`#name.pkg`
   references, percent-encoded or not). `hostArchitectures` is shown by
   `inspect` and not enforced: the root's architecture is not the host's.
 - **Payloads:** raw or gzip CPIO in odc, newc or crc format, holding regular
@@ -39,16 +40,78 @@ There are two builds of the same sources:
 - **Scripts:** `preflight`, `preinstall`, `postinstall` and `postflight`.
   In the running root they are run directly; in an offline root, through a
   script runner (below).
+- **Installer JS:** inline Distribution scripts, installation/volume checks,
+  choice expressions and package activation, using the subset described below.
 
 Refused, before the root is touched: other compressions (pbzx, bzip2),
-Distribution JavaScript (`<script>`, `installation-check`, `volume-check`,
-non-literal `selected`/`enabled`/`active`, ...), external package
-references, hardlinks, device nodes, FIFOs, set-id bits, AppleDouble files,
-DTDs in any XML, and unknown PackageInfo or Distribution elements.
+external Distribution scripts and package references, hardlinks, device nodes,
+FIFOs, set-id bits, AppleDouble files, DTDs in package XML, and unknown
+PackageInfo or Distribution elements. XML plist reads have the separate,
+restricted DOCTYPE handling described below.
 
-MiniDarwin packages [QuickJS](../quickjs/README.md) as an engine for future
-Distribution JavaScript support. It is not yet integrated with mdpkg;
-installer-specific JavaScript globals and checks still need implementation.
+## Installer JavaScript
+
+Both builds embed the same pinned [QuickJS](../quickjs/README.md) engine.
+The object model follows [Apple's Installer JS documentation](https://developer.apple.com/documentation/installer_js)
+within this supported subset:
+
+- `system.log(text)` prints `JS:` messages to stderr. `propertiesOf(object)`
+  returns its own enumerable string property names. `compareVersions(a, b)`
+  compares numeric dotted versions, ignoring leading zeros and treating omitted
+  trailing components as zero; other version syntax is an error.
+- `system.version` reads the host's
+  `/System/Library/CoreServices/SystemVersion.plist`. `system.sysctl(name)`
+  supports `hw.machine`, `hw.model`, `hw.ncpu`, `hw.memsize`, `hw.optional.*`,
+  `kern.osrelease` and `kern.osversion`, returning strings or numbers as appropriate.
+  Unsupported selectors and unavailable queries are errors.
+- `my.target.mountpoint`, `availableKilobytes`, `systemVersion` and
+  `receiptForIdentifier(id)` describe the target tree. Available space is in
+  kilobytes (1024 bytes); OS version and receipts are read from that tree,
+  without falling back to the host. Missing plists/receipts return `null`.
+- `system.files.fileExistsAtPath(path)`, `plistAtPath(path)` and
+  `bundleAtPath(path)` read absolute host paths. Bundle lookup reads
+  `Contents/Info.plist`, then `Info.plist`. Paths entering the target tree,
+  including through aliases of its parent directories, follow the target's
+  symlink-confinement rules. File existence returns `false` for missing paths;
+  missing plists/bundles return `null`.
+- XML plists support dictionaries, arrays, strings, signed integers, finite
+  real numbers, booleans, UTC dates (`Date`) and base64 data (`Uint8Array`).
+  The canonical Apple plist DOCTYPE is accepted without loading it. Binary
+  plists, entity declarations, malformed values and duplicate keys are errors.
+
+The inline `<script>` (escaped XML text or CDATA) executes once. Its globals
+are shared by subsequent checks and expressions. Installation checks run
+before volume checks; `my.result.type`, `title` and `message` reset between
+them. A false result stops installation unless the type is `Warn`, in which
+case mdpkg prints the warning and continues. Fatal errors include the check
+and its title/message. Evaluation happens before staging or installation
+writes; offline locking and interrupted-transaction recovery still happen first.
+
+`choices[id]` exposes `selected`, `enabled`, `visible`, `title`, `description`
+and `packages` (identifier/version metadata). Literal `start_*` flags initialize
+state. Supplied choice expressions evaluate with `my` as the current choice,
+also carrying `my.target` and `my.result`. Choices reevaluate in outline order
+until stable, with a maximum of 64 passes. Disabled or hidden choices can still
+be selected. Package-reference attributes merge across global and choice-local
+nodes; conflicting definitions are refused. A false `active` expression skips
+the component before decoding its payload. Static Distributions retain their
+existing `start_selected && selected` selection behavior.
+
+`-pkginfo` / `inspect` with `-target` evaluates checks and selection read-only,
+without locking, recovery or installation. Without a target, static packages
+are inspected as before; JS packages report candidate metadata and unresolved
+selection. Scripts and expressions are syntax-checked but never executed in
+target-free inspection.
+
+The runtime has a 64 MiB engine memory limit, a 1 MiB JS stack limit and a shared
+five-second monotonic evaluation deadline. Evaluation is synchronous; queued
+asynchronous jobs are refused. The embedder provides no QuickJS `std`/`os`
+modules, module loader, process execution, network or file-writing APIs.
+`system.run`/`runOnce`, localization, applications, IORegistry, defaults,
+desktop-session queries, Gestalt and `choice.packageUpgradeAction` fail with
+explicit unsupported-API diagnostics when accessed. Relocation searches and
+other unsupported Distribution elements remain refused. JS support does not
+require a shell-script runner; payload shell hooks still do.
 
 Bundle upgrade and relocation data (`bundle-version`, `relocate`, ...) is
 accepted and ignored: it only matters when the bundle is already installed,
@@ -173,7 +236,9 @@ release manifest (see `docs/rootfs-spec.md`).
 `nix flake check` runs `scripts/test_mdpkg.py` against the bootstrap build:
 fixture packages built from the format descriptions (not with Apple's tools)
 covering each supported and refused feature, hostile paths and links, limits,
-checksums, collisions, locking, rollback and recovery. The target build is
+checksums, collisions, locking, rollback and recovery. JS fixtures cover checks,
+selection convergence, host/target metadata, read confinement, plist values,
+unsupported APIs, read-only inspection and runtime limits. The target build is
 checked for its load commands and purity but not run.
 
 `scripts/test_mdpkg_mc.py` is the end-to-end proof, run by hand on macOS since

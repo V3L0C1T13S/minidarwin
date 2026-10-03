@@ -25,9 +25,12 @@ stdenv.mkDerivation {
 
   installPhase = ''
     runHook preInstall
-    mkdir -p "$out/bin" "$out/share/quickjs"
+    mkdir -p "$out/bin" "$out/share/quickjs" "$out/include/quickjs" "$out/lib"
     install -m755 qjs qjsc "$out/bin"
     install -m644 repl.c smoke.c "$out/share/quickjs"
+    install -m644 quickjs.h "$out/include/quickjs/"
+    install -m644 libquickjs.a "$out/lib/"
+    install -Dm644 LICENSE "$out/share/licenses/quickjs/LICENSE"
     runHook postInstall
   '';
 

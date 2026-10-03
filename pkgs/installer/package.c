@@ -1,11 +1,11 @@
-/* From a XAR to a list of components: either one bare component package, or
- * a product archive whose Distribution statically selects embedded ones.
- * Anything that would need JavaScript, the network or the running system to
- * decide is refused here, before a root is touched. */
+/* Distribution parsing is independent of selection. The target and checks
+ * decide which embedded components to decode before install preflight. */
 #include "mdpkg.h"
+#include "installer-js.h"
 
 #include <libxml/tree.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
 
@@ -64,7 +64,7 @@ static void read_scripts(Component *c, xmlNode *scripts) {
 }
 
 static void load_component(Package *pkg, const char *dir,
-                           const char *expected_id) {
+                           const char *expected_id, int metadata_only) {
   for (size_t i = 0; i < pkg->count; i++)
     if (!strcmp(pkg->components[i].xar_dir, dir))
       return;
@@ -93,6 +93,14 @@ static void load_component(Package *pkg, const char *dir,
        n = xml_next_element(n))
     if (!one_of(xml_name(n), packageinfo_elements))
       die("unsupported PackageInfo element: %s", xml_name(n));
+
+  if (metadata_only) {
+    c.metadata_only = 1;
+    xml_free(doc);
+    pkg->components = xrealloc(pkg->components, pkg->count + 1, sizeof(Component));
+    pkg->components[pkg->count++] = c;
+    return;
+  }
 
   Bytes payload = component_member(pkg, dir, "Payload", 0),
         scripts = component_member(pkg, dir, "Scripts", 0);
@@ -156,30 +164,64 @@ static int static_boolean(xmlNode *n, const char *key) {
   return result;
 }
 
-/* Elements whose content is presentation or static metadata. Scripts,
- * installation-check, volume-check, allowed-os-versions and the like are
- * deliberately absent: they must be evaluated, and there is nothing to
- * evaluate them against. */
+/* Presentation and static metadata, plus the supported JS entrypoints. */
 static const char *const distribution_elements[] = {
-    "installer-script", "installer-gui-script", "title",   "options",
-    "domains",          "background",           "background-darkAqua",
-    "welcome",          "readme",               "license", "conclusion",
-    "product",          "choices-outline",      "line",    "choice",
-    "pkg-ref",          "bundle-version",       "bundle",  "must-close",
-    "app",              NULL};
-static const char *const boolean_attributes[] = {
-    "selected", "enabled", "visible", "start_selected", "start_enabled",
-    "start_visible", "active", NULL};
+    "installer-script", "installer-gui-script", "title", "options", "domains",
+    "background", "background-darkAqua", "welcome", "readme", "license",
+    "conclusion", "product", "choices-outline", "line", "choice", "pkg-ref",
+    "bundle-version", "bundle", "must-close", "app", "script",
+    "installation-check", "volume-check", NULL};
+static const char *const expression_attributes[] = {
+    "selected", "enabled", "visible", "active", NULL};
+static const char *const initial_attributes[] = {
+    "start_selected", "start_enabled", "start_visible", NULL};
 
-static void validate_distribution(Package *pkg, xmlNode *n, int depth) {
+static void expression_label(char *buf, size_t len, xmlNode *node,
+                              const char *attribute) {
+  char *id = xml_attr(node, "id", "");
+  snprintf(buf, len, "%s[%s]/@%s", xml_name(node), id, attribute);
+  free(id);
+}
+
+static void validate_distribution(Package *pkg, InstallerJS *js, xmlNode *n,
+                                   int depth, int require_scripts) {
   if (depth > LIMIT_DEPTH)
     die("Distribution nesting limit");
   for (; n; n = xml_next_element(n)) {
     if (!one_of(xml_name(n), distribution_elements))
       die("unsupported Distribution element: %s", xml_name(n));
-    for (xmlAttr *a = n->properties; a; a = a->next)
-      if (one_of((const char *)a->name, boolean_attributes))
-        (void)static_boolean(n, (const char *)a->name);
+    for (xmlAttr *a = n->properties; a; a = a->next) {
+      const char *key = (const char *)a->name;
+      if (one_of(key, initial_attributes))
+        (void)static_boolean(n, key);
+      if (one_of(key, expression_attributes)) {
+        char *source = xml_attr(n, key, NULL), label[512];
+        expression_label(label, sizeof(label), n, key);
+        installer_js_compile(js, source, label, 1);
+        if (strcmp(source, "true") && strcmp(source, "false")) {
+          if (!require_scripts)
+            die("Distribution require-scripts=false requires literal %s", label);
+          pkg->needs_js = 1;
+        }
+        free(source);
+      }
+      if (!strcmp(key, "onConclusionScript"))
+        die("unsupported Distribution attribute: onConclusionScript");
+    }
+    if (xml_is(n, "script")) {
+      if (xmlHasProp(n, BAD_CAST "src"))
+        die("external Distribution script is unsupported");
+      char *source = xml_text(n);
+      installer_js_compile(js, source, "Distribution/script", 0);
+      free(source);
+      pkg->needs_js = 1;
+    }
+    if (xml_is(n, "installation-check") || xml_is(n, "volume-check")) {
+      char *source = xml_attr(n, "script", NULL);
+      installer_js_compile(js, source, xml_name(n), 1);
+      free(source);
+      pkg->needs_js = 1;
+    }
     if (xml_is(n, "options") && !pkg->host_architectures) {
       char *arch = xml_attr(n, "hostArchitectures", "");
       if (*arch)
@@ -187,14 +229,13 @@ static void validate_distribution(Package *pkg, xmlNode *n, int depth) {
       else
         free(arch);
     }
-    validate_distribution(pkg, xml_elements(n), depth + 1);
+    validate_distribution(pkg, js, xml_elements(n), depth + 1, require_scripts);
   }
 }
 
 static xmlNode *find_choice(xmlNode *dist, const char *id) {
   xmlNode *found = NULL;
-  for (xmlNode *n = xml_elements(dist); n;
-       n = xml_next_element(n)) {
+  for (xmlNode *n = xml_elements(dist); n; n = xml_next_element(n)) {
     if (!xml_is(n, "choice"))
       continue;
     char *cid = xml_attr(n, "id", NULL);
@@ -210,83 +251,337 @@ static xmlNode *find_choice(xmlNode *dist, const char *id) {
   return found;
 }
 
-/* A pkg-ref id may appear several times; exactly one carries the location. */
-static char *find_reference(xmlNode *dist, const char *id) {
-  char *path = NULL;
-  for (xmlNode *n = xml_elements(dist); n;
-       n = xml_next_element(n)) {
-    if (!xml_is(n, "pkg-ref"))
-      continue;
-    char *nid = xml_attr(n, "id", NULL);
-    if (!strcmp(nid, id) && static_boolean(n, "active"))
-      for (xmlNode *t = n->children; t; t = t->next)
-        if (t->type == XML_TEXT_NODE) {
-          char *text = xml_text(t);
-          if (*text) {
-            if (path)
-              die("pkg-ref %s has several locations", id);
-            path = embedded_reference(text);
-          }
-          free(text);
-        }
-    free(nid);
-  }
-  if (!path)
-    die("unresolved pkg-ref: %s", id);
-  return path;
+typedef struct {
+  char *path, *active, *version;
+  int found;
+} Reference;
+
+/* Reference attributes are merged across global and choice-local nodes.
+ * Conflicting definitions are ambiguous and refused rather than guessed. */
+static void merge_attribute(char **out, xmlNode *n, const char *key) {
+  if (!xmlHasProp(n, BAD_CAST key))
+    return;
+  char *value = xml_attr(n, key, NULL);
+  if (*out && strcmp(*out, value))
+    die("conflicting pkg-ref %s definitions", key);
+  if (!*out)
+    *out = value;
+  else
+    free(value);
 }
 
-static void select_lines(Package *pkg, xmlNode *dist, xmlNode *line,
-                         int depth) {
+static void collect_reference(xmlNode *n, const char *id, Reference *ref) {
+  for (; n; n = xml_next_element(n)) {
+    if (xml_is(n, "pkg-ref")) {
+      char *nid = xml_attr(n, "id", NULL);
+      if (!strcmp(nid, id)) {
+        ref->found = 1;
+        merge_attribute(&ref->active, n, "active");
+        merge_attribute(&ref->version, n, "version");
+        for (xmlNode *t = n->children; t; t = t->next)
+          if (t->type == XML_TEXT_NODE || t->type == XML_CDATA_SECTION_NODE) {
+            char *text = xml_text(t);
+            char *start = text;
+            while (*start == ' ' || *start == '\t' || *start == '\r' || *start == '\n')
+              start++;
+            size_t len = strlen(start);
+            while (len && (start[len - 1] == ' ' || start[len - 1] == '\t' ||
+                           start[len - 1] == '\r' || start[len - 1] == '\n'))
+              start[--len] = 0;
+            if (*start) {
+              if (ref->path)
+                die("pkg-ref %s has several locations", id);
+              ref->path = embedded_reference(start);
+            }
+            free(text);
+          }
+      }
+      free(nid);
+    }
+    collect_reference(xml_elements(n), id, ref);
+  }
+}
+
+static Reference find_reference(xmlNode *dist, const char *id) {
+  Reference ref = {0};
+  collect_reference(xml_elements(dist), id, &ref);
+  if (!ref.found || !ref.path)
+    die("unresolved pkg-ref: %s", id);
+  return ref;
+}
+
+static void free_reference(Reference *ref) {
+  free(ref->path);
+  free(ref->active);
+  free(ref->version);
+}
+
+typedef struct {
+  char *id;
+  xmlNode *node;
+  JSValue value;
+} Choice;
+
+typedef struct {
+  Choice *items;
+  size_t count;
+} ChoiceList;
+
+static void outline_choices(xmlNode *dist, xmlNode *line, ChoiceList *choices,
+                              int depth) {
   if (depth > LIMIT_DEPTH)
     die("choices-outline nesting limit");
   for (; line; line = xml_next_element(line)) {
     if (!xml_is(line, "line"))
       die("unsupported choices-outline element: %s", xml_name(line));
     char *id = xml_attr(line, "choice", NULL);
-    xmlNode *choice = find_choice(dist, id);
-    free(id);
-    if (static_boolean(choice, "start_selected") &&
-        static_boolean(choice, "selected"))
-      for (xmlNode *ref = xml_elements(choice); ref;
-           ref = xml_next_element(ref)) {
-        if (!xml_is(ref, "pkg-ref"))
-          die("unsupported choice content: %s", xml_name(ref));
-        char *pid = xml_attr(ref, "id", NULL), *path = find_reference(dist, pid);
-        load_component(pkg, path, pid);
-        free(path);
-        free(pid);
-      }
-    select_lines(pkg, dist, xml_elements(line), depth + 1);
+    for (size_t i = 0; i < choices->count; i++)
+      if (!strcmp(choices->items[i].id, id))
+        die("choice appears more than once in outline: %s", id);
+    if (choices->count >= 1024)
+      die("choice limit");
+    xmlNode *node = find_choice(dist, id);
+    choices->items = xrealloc(choices->items, choices->count + 1, sizeof(Choice));
+    choices->items[choices->count++] = (Choice){id, node, JS_UNDEFINED};
+    outline_choices(dist, xml_elements(line), choices, depth + 1);
   }
 }
 
-void package_load(Package *pkg, const char *path) {
-  *pkg = (Package){.path = path};
-  xar_open(&pkg->xar, path);
-  Bytes distribution = xar_member(&pkg->xar, "Distribution", 0);
-  if (!distribution.data)
-    load_component(pkg, "", NULL);
-  else {
-    xmlDoc *doc = xml_parse(distribution);
-    xmlNode *dist = xmlDocGetRootElement(doc);
-    if (!xml_is(dist, "installer-script") &&
-        !xml_is(dist, "installer-gui-script"))
-      die("unsupported Distribution root");
-    validate_distribution(pkg, dist, 0);
-    xmlNode *outline = xml_child(dist, "choices-outline");
-    if (!outline)
-      die("Distribution without a choices-outline");
-    select_lines(pkg, dist, xml_elements(outline), 0);
-    xml_free(doc);
+static void check_choices(xmlNode *dist, ChoiceList *choices) {
+  for (xmlNode *n = xml_elements(dist); n; n = xml_next_element(n)) {
+    if (xml_is(n, "choice")) {
+      char *id = xml_attr(n, "id", NULL);
+      (void)find_choice(dist, id);
+      int found = 0;
+      for (size_t i = 0; i < choices->count; i++)
+        if (!strcmp(id, choices->items[i].id))
+          found = 1;
+      if (!found)
+        die("choice missing from outline: %s", id);
+      free(id);
+      for (xmlNode *child = xml_elements(n); child; child = xml_next_element(child)) {
+        if (!xml_is(child, "pkg-ref"))
+          die("unsupported choice content: %s", xml_name(child));
+        char *pid = xml_attr(child, "id", NULL);
+        Reference ref = find_reference(dist, pid);
+        free_reference(&ref);
+        free(pid);
+      }
+    }
   }
+}
+
+static void set_property(InstallerJS *js, JSValueConst object, const char *key,
+                          JSValue value) {
+  installer_js_require(js, value, key);
+  if (JS_SetPropertyStr(js->context, object, key, value) < 0)
+    installer_js_require(js, JS_EXCEPTION, key);
+}
+
+static int choice_state(InstallerJS *js, Choice *choice, const char *key) {
+  JSValue value = JS_GetPropertyStr(js->context, choice->value, key);
+  installer_js_require(js, value, choice->id);
+  int state = JS_ToBool(js->context, value);
+  JS_FreeValue(js->context, value);
+  return state;
+}
+
+static void initialize_choices(InstallerJS *js, xmlNode *dist, ChoiceList *choices) {
+  const char *keys[] = {"selected", "enabled", "visible"};
+  const char *initial[] = {"start_selected", "start_enabled", "start_visible"};
+  for (size_t i = 0; i < choices->count; i++) {
+    Choice *choice = &choices->items[i];
+    choice->value = JS_NewObject(js->context);
+    installer_js_require(js, choice->value, choice->id);
+    for (size_t k = 0; k < 3; k++)
+      set_property(js, choice->value, keys[k], JS_NewBool(js->context,
+          static_boolean(choice->node, initial[k])));
+    const char *metadata[] = {"title", "description"};
+    for (size_t k = 0; k < 2; k++) {
+      char *text = xml_attr(choice->node, metadata[k], "");
+      set_property(js, choice->value, metadata[k], JS_NewString(js->context, text));
+      free(text);
+    }
+    JSValue packages = JS_NewArray(js->context);
+    uint32_t index = 0;
+    for (xmlNode *n = xml_elements(choice->node); n; n = xml_next_element(n)) {
+      char *id = xml_attr(n, "id", NULL);
+      Reference ref = find_reference(dist, id);
+      JSValue package = JS_NewObject(js->context);
+      set_property(js, package, "identifier", JS_NewString(js->context, id));
+      set_property(js, package, "version", ref.version ? JS_NewString(js->context, ref.version) : JS_UNDEFINED);
+      if (JS_SetPropertyUint32(js->context, packages, index++, package) < 0)
+        installer_js_require(js, JS_EXCEPTION, choice->id);
+      free_reference(&ref);
+      free(id);
+    }
+    set_property(js, choice->value, "packages", packages);
+    /* Expose an explicit failure for the intentionally unsupported property. */
+    JSValue source = installer_js_eval(js,
+        "({get packageUpgradeAction(){throw new TypeError('unsupported Installer JS API: choice.packageUpgradeAction')}})",
+        "choice API", 1);
+    JSPropertyDescriptor descriptor;
+    JSAtom atom = JS_NewAtom(js->context, "packageUpgradeAction");
+    if (JS_GetOwnProperty(js->context, &descriptor, source, atom) != 1)
+      installer_js_require(js, JS_EXCEPTION, choice->id);
+    if (JS_DefinePropertyGetSet(js->context, choice->value, atom,
+                                descriptor.getter, descriptor.setter, JS_PROP_ENUMERABLE) < 0)
+      installer_js_require(js, JS_EXCEPTION, choice->id);
+    JS_FreeValue(js->context, descriptor.value);
+    JS_FreeAtom(js->context, atom);
+    JS_FreeValue(js->context, source);
+    set_property(js, js->choices, choice->id, JS_DupValue(js->context, choice->value));
+  }
+}
+
+static void settle_choices(InstallerJS *js, ChoiceList *choices) {
+  const char *keys[] = {"selected", "enabled", "visible"};
+  int *before = xcalloc(choices->count * 3, sizeof(int));
+  for (int pass = 0; pass < 64; pass++) {
+    for (size_t i = 0; i < choices->count; i++)
+      for (size_t k = 0; k < 3; k++)
+        before[i * 3 + k] = choice_state(js, &choices->items[i], keys[k]);
+    for (size_t i = 0; i < choices->count; i++) {
+      Choice *choice = &choices->items[i];
+      installer_js_my(js, choice->value);
+      for (size_t k = 0; k < 3; k++) {
+        if (!xmlHasProp(choice->node, BAD_CAST keys[k]))
+          continue;
+        char *source = xml_attr(choice->node, keys[k], NULL), label[512];
+        expression_label(label, sizeof(label), choice->node, keys[k]);
+        int value = installer_js_boolean(js, source, label);
+        free(source);
+        set_property(js, choice->value, keys[k], JS_NewBool(js->context, value));
+      }
+    }
+    int changed = 0;
+    for (size_t i = 0; i < choices->count; i++)
+      for (size_t k = 0; k < 3; k++)
+        if (before[i * 3 + k] != choice_state(js, &choices->items[i], keys[k]))
+          changed = 1;
+    if (!changed) {
+      free(before);
+      return;
+    }
+  }
+  die("Installer JS choices did not stabilize after 64 passes");
+}
+
+static void check_payload_paths(Package *pkg) {
   if (!pkg->count)
     die("no package selected");
-  /* Components may share directories, never anything else. */
   EntryList all = {0};
   for (size_t i = 0; i < pkg->count; i++)
     for (size_t j = 0; j < pkg->components[i].payload.count; j++)
       entries_append(&all, pkg->components[i].payload.items[j]);
   entries_check_paths(&all, 1);
   free(all.items);
+}
+
+void package_resolve(Package *pkg, const char *root, int live) {
+  if (!pkg->distribution)
+    return;
+  if (pkg->needs_js && !root)
+    die("Installer JS selection requires a target");
+  xmlNode *dist = xmlDocGetRootElement(pkg->distribution);
+  ChoiceList choices = {0};
+  outline_choices(dist, xml_elements(xml_child(dist, "choices-outline")), &choices, 0);
+  InstallerJS *js = pkg->needs_js ? installer_js_new(root, live) : NULL;
+  if (js) {
+    initialize_choices(js, dist, &choices);
+    xmlNode *script = xml_child(dist, "script");
+    if (script) {
+      char *source = xml_text(script);
+      JS_FreeValue(js->context, installer_js_eval(js, source, "Distribution/script", 0));
+      free(source);
+    }
+    installer_js_check(js, xml_child(dist, "installation-check"));
+    installer_js_check(js, xml_child(dist, "volume-check"));
+    settle_choices(js, &choices);
+  }
+  for (size_t i = 0; i < choices.count; i++) {
+    Choice *choice = &choices.items[i];
+    int selected = js ? choice_state(js, choice, "selected")
+                      : static_boolean(choice->node, "start_selected") &&
+                        static_boolean(choice->node, "selected");
+    if (selected)
+      for (xmlNode *n = xml_elements(choice->node); n; n = xml_next_element(n)) {
+        char *id = xml_attr(n, "id", NULL);
+        Reference ref = find_reference(dist, id);
+        int active = 1;
+        if (ref.active) {
+          if (js) {
+            installer_js_my(js, choice->value);
+            char label[512];
+            snprintf(label, sizeof(label), "pkg-ref[%s]/@active", id);
+            active = installer_js_boolean(js, ref.active, label);
+          } else
+            active = !strcmp(ref.active, "true");
+        }
+        if (active)
+          load_component(pkg, ref.path, id, 0);
+        free_reference(&ref);
+        free(id);
+      }
+    if (js)
+      JS_FreeValue(js->context, choice->value);
+    free(choice->id);
+  }
+  free(choices.items);
+  if (js)
+    installer_js_free(js);
+  xml_free(pkg->distribution);
+  pkg->distribution = NULL;
+  check_payload_paths(pkg);
+}
+
+void package_inspect_candidates(Package *pkg) {
+  xmlNode *dist = xmlDocGetRootElement(pkg->distribution);
+  for (xmlNode *choice = xml_elements(dist); choice; choice = xml_next_element(choice)) {
+    if (!xml_is(choice, "choice"))
+      continue;
+    for (xmlNode *n = xml_elements(choice); n; n = xml_next_element(n)) {
+      char *id = xml_attr(n, "id", NULL);
+      Reference ref = find_reference(dist, id);
+      load_component(pkg, ref.path, id, 1);
+      free_reference(&ref);
+      free(id);
+    }
+  }
+  pkg->unresolved = 1;
+}
+
+void package_load(Package *pkg, const char *path) {
+  *pkg = (Package){.path = path};
+  xar_open(&pkg->xar, path);
+  Bytes distribution = xar_member(&pkg->xar, "Distribution", 0);
+  if (!distribution.data) {
+    load_component(pkg, "", NULL, 0);
+    check_payload_paths(pkg);
+    return;
+  }
+  pkg->distribution = xml_parse(distribution);
+  xmlNode *dist = xmlDocGetRootElement(pkg->distribution);
+  if (!xml_is(dist, "installer-script") && !xml_is(dist, "installer-gui-script"))
+    die("unsupported Distribution root");
+  if (!xml_child(dist, "choices-outline"))
+    die("Distribution without a choices-outline");
+  const char *unique[] = {"script", "installation-check", "volume-check", "options", "choices-outline"};
+  for (size_t i = 0; i < sizeof(unique) / sizeof(*unique); i++) {
+    int seen = 0;
+    for (xmlNode *n = xml_elements(dist); n; n = xml_next_element(n))
+      if (xml_is(n, unique[i]) && seen++)
+        die("duplicate Distribution element: %s", unique[i]);
+  }
+  xmlNode *options = xml_child(dist, "options");
+  int require_scripts = static_boolean(options, "require-scripts");
+  InstallerJS *js = installer_js_new(NULL, 0);
+  validate_distribution(pkg, js, dist, 0, require_scripts);
+  installer_js_free(js);
+  ChoiceList choices = {0};
+  outline_choices(dist, xml_elements(xml_child(dist, "choices-outline")), &choices, 0);
+  check_choices(dist, &choices);
+  for (size_t i = 0; i < choices.count; i++)
+    free(choices.items[i].id);
+  free(choices.items);
 }

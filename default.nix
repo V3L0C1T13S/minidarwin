@@ -448,7 +448,9 @@ lib.makeScope pkgs.newScope (self: with self; {
   installer = callPackage ./pkgs/installer/installer.nix {
     toolchain = toolchainStage3;
   };
-  installerBootstrap = pkgs.callPackage ./pkgs/installer/bootstrap.nix { };
+  installerBootstrap = pkgs.callPackage ./pkgs/installer/bootstrap.nix {
+    inherit quickjsBuildRoot;
+  };
   installerTest = callPackage ./pkgs/installer/installer-test.nix { };
 
   #### stage 7: the rootfs ####################################################

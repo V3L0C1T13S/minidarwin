@@ -74,6 +74,7 @@ typedef struct {
   EntryList payload; /* paths include `location` */
   EntryList scripts;
   char *hooks[HOOK_COUNT]; /* script paths inside `scripts`, or NULL */
+  int metadata_only; /* target-free inspection of a JS candidate */
 } Component;
 
 typedef struct {
@@ -82,6 +83,8 @@ typedef struct {
   Component *components;
   size_t count;
   char *host_architectures; /* informational; NULL if absent */
+  struct _xmlDoc *distribution; /* retained until target selection */
+  int needs_js, unresolved;
 } Package;
 
 /* util.c */
@@ -140,9 +143,15 @@ void cpio_parse(Bytes archive, EntryList *out);
 
 /* package.c */
 void package_load(Package *pkg, const char *path);
+void package_resolve(Package *pkg, const char *root, int live);
+void package_inspect_candidates(Package *pkg);
 
 /* install.c */
 void install_package(Package *pkg, const char *root, const char *runner);
+char *resolve_target_path(const char *base, const char *rel,
+                          int follow_last, int live);
+int is_running_root(const char *root);
+char *inspect_target(const char *requested);
 
 /* receipts.c */
 void snapshot_tree(EntryList *out, const char *base);

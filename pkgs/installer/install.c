@@ -174,8 +174,8 @@ static void lock_and_recover(const char *requested) {
  * Missing components are taken literally. A final symlink is followed only
  * with FOLLOW_LAST. The result has no symlink components, so writes to it
  * pass path_parents(). */
-static char *resolve_beneath(const char *base, const char *rel,
-                             int follow_last) {
+char *resolve_target_path(const char *base, const char *rel,
+                          int follow_last, int live) {
   char *done = xstrdup(""), *todo = xstrdup(rel);
   int hops = 0;
   while (*todo) {
@@ -213,7 +213,7 @@ static char *resolve_beneath(const char *base, const char *rel,
       const char *relative = target;
       if (*target == '/') {
         /* In the running root an absolute link points inside it. */
-        if (!tx.live)
+        if (!live)
           die("%s passes through an absolute symlink: %s", rel, next);
         while (*relative == '/')
           relative++;
@@ -236,6 +236,10 @@ static char *resolve_beneath(const char *base, const char *rel,
   }
   free(todo);
   return done;
+}
+
+static char *resolve_beneath(const char *base, const char *rel, int follow_last) {
+  return resolve_target_path(base, rel, follow_last, tx.live);
 }
 
 static int is_reserved(const char *path) {
@@ -662,9 +666,19 @@ static int same_directory(const char *a, const char *b) {
  * count, and a symlink to it does not). MDPKG_TEST_LIVE_ROOT names one more
  * directory to treat that way, for tests: a live install of the real root is
  * not something a test may do. */
-static int is_running_root(const char *root) {
+int is_running_root(const char *root) {
   const char *test = getenv("MDPKG_TEST_LIVE_ROOT");
   return same_directory(root, "/") || (test && same_directory(root, test));
+}
+
+/* Inspection needs neither a writable parent nor a lock/recovery operation. */
+char *inspect_target(const char *requested) {
+  struct stat st;
+  char resolved[PATH_MAX];
+  if (lstat(requested, &st) || !S_ISDIR(st.st_mode) ||
+      !realpath(requested, resolved) || access(resolved, R_OK | X_OK))
+    die("target must be a real, readable directory: %s", requested);
+  return xstrdup(resolved);
 }
 
 static void live_lock(void) {
@@ -696,6 +710,7 @@ static void install_live(Package *pkg, const char *root, const char *runner) {
   tx.root = xstrdup(realpath(root, resolved) ? resolved : root);
   if (!getenv("MDPKG_TEST_LIVE_ROOT") && geteuid())
     die("installing into the running root requires root");
+  package_resolve(pkg, tx.root, 1);
   live_lock();
   preflight(pkg, runner);
 
@@ -731,6 +746,7 @@ void install_package(Package *pkg, const char *root, const char *runner) {
     return;
   }
   lock_and_recover(root);
+  package_resolve(pkg, tx.root, 0);
   preflight(pkg, runner);
 
   if (mkdir(tx.dir, 0700))

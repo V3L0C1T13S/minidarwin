@@ -9,7 +9,7 @@
 
 static const char usage[] =
     "usage: mdpkg -pkg FILE -target DIRECTORY [-script-runner EXECUTABLE]\n"
-    "       mdpkg -pkginfo -pkg FILE\n"
+    "       mdpkg -pkginfo -pkg FILE [-target DIRECTORY]\n"
     "       mdpkg -vers\n"
     "\n"
     "  -pkg FILE               the flat package\n"
@@ -18,14 +18,20 @@ static const char usage[] =
     "  -script-runner PROGRAM  run install scripts through PROGRAM; needed for\n"
     "                          any root but \"/\", where scripts run directly\n"
     "  -pkginfo                describe the package and install nothing\n"
+    "                          optional -target resolves JavaScript read-only\n"
     "\n"
     "The subcommands `mdpkg install` and `mdpkg inspect` take the same options.\n";
 
 static void inspect(const Package *pkg) {
+  if (pkg->unresolved)
+    puts("JavaScript selection unresolved: provide -target to evaluate checks and choices");
   for (size_t i = 0; i < pkg->count; i++) {
     const Component *c = &pkg->components[i];
-    printf("%s %s /%s: %zu payload entries", c->identifier, c->version,
-           c->location, c->payload.count);
+    printf("%s %s /%s", c->identifier, c->version, c->location);
+    if (c->metadata_only)
+      printf(": candidate (selection unresolved)");
+    else
+      printf(": %zu payload entries", c->payload.count);
     for (int h = 0; h < HOOK_COUNT; h++)
       if (c->hooks[h])
         printf("; script %s", hook_names[h]);
@@ -82,8 +88,8 @@ int main(int argc, char **argv) {
   }
   if (!package)
     die("-pkg is required");
-  if (!installing && (root || runner))
-    die("inspecting takes only -pkg");
+  if (!installing && runner)
+    die("inspecting does not take -script-runner");
   if (installing && !root)
     die("-target is required");
 
@@ -97,7 +103,16 @@ int main(int argc, char **argv) {
   package_load(&pkg, package_path);
   if (installing)
     install_package(&pkg, root, runner ? runner_path : NULL);
-  else
+  else {
+    if (root) {
+      char *target = inspect_target(root);
+      package_resolve(&pkg, target, is_running_root(root));
+      free(target);
+    } else if (pkg.needs_js)
+      package_inspect_candidates(&pkg);
+    else
+      package_resolve(&pkg, NULL, 0);
     inspect(&pkg);
+  }
   return 0;
 }

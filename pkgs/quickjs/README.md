@@ -31,11 +31,13 @@ module, worker and std/os tests. Build both target checks with:
 nix build .#quickjsTest .#cross.x86_64.quickjsTest
 ```
 
-For future installer integration, include `<quickjs.h>` with
+For embedding, include `<quickjs.h>` with
 `-I${quickjs}/usr/include/quickjs` and link
 `${quickjs}/usr/lib/quickjs/libquickjs.a`. An embedder can create a runtime
 and context, set memory/time limits, register installer-specific globals,
 and evaluate Distribution scripts without registering the std/os modules.
 `qjs` exposes filesystem and process APIs and is not an installer sandbox.
-The `installer` package still rejects Distribution JavaScript; this package
-provides the engine for a later implementation of those installer APIs.
+The `installer` package embeds this archive to implement its documented
+[Installer JS subset](../installer/README.md#installer-javascript).
+`quickjsBuildRoot` also exports `include/quickjs/quickjs.h` and
+`lib/libquickjs.a`, used by the host installer build from the same source pin.
