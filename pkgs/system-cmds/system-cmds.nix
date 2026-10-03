@@ -5,7 +5,7 @@
 # BSD.xcconfig, which is not released; what base.xcconfig itself sets is below.
 #
 # Not built, among the rest: the tools that need frameworks or libraries that
-# are not released or not built (arch, chpass, chkpasswd, dynamic_pager,
+# are not released or not built (chpass, chkpasswd, dynamic_pager,
 # fs_usage, gcore, iostat, login, nvram, reboot, shutdown, latency,
 # sc_usage, ...), the set-uid ones the rootfs format cannot mark (at,
 # newgrp, passwd), and Apple-internal diagnostics (kpgo, stackshot, zlog, ...).
@@ -15,10 +15,12 @@
 , toolchain
 , runCommand
 , gawk
+, callPackage
 }:
 
 let
   src = sources.system_cmds;
+  archHeaders = callPackage ./arch-headers.nix { };
 
   # base.xcconfig's OTHER_CFLAGS (XPC_BUILD_OTHER_CFLAGS) and
   # HEADER_SEARCH_PATHS, for every target that does not set its own.
@@ -59,6 +61,38 @@ let
       };
     };
     accton = { installDir = "/usr/sbin"; man = man8 "accton"; };
+    arch = {
+      # TARGET_OS_OSX selects Apple's Intel-on-ARM support and the kernel
+      # affinity reset. Include it explicitly, independent of CF's umbrella.
+      cflags = baseCflags ++ [ "-include" "TargetConditionals.h" "-I${archHeaders}" "-I${./include}" ];
+      man = {
+        "arch/arch.1" = "/usr/share/man/man1/arch.1";
+        "arch/machine.1" = "/usr/share/man/man1/machine.1";
+      };
+      links."/usr/bin/machine" = "/usr/bin/arch";
+      # Preserve plist preferences; these implementations are not built yet.
+      allowUndefined = {
+        "_environ" = "dyld";
+        "_CFArrayGetCount" = "CoreFoundation";
+        "_CFArrayGetTypeID" = "CoreFoundation";
+        "_CFArrayGetValueAtIndex" = "CoreFoundation";
+        "_CFDataCreateWithBytesNoCopy" = "CoreFoundation";
+        "_CFDictionaryGetTypeID" = "CoreFoundation";
+        "_CFDictionaryGetValue" = "CoreFoundation";
+        "_CFEqual" = "CoreFoundation";
+        "_CFGetTypeID" = "CoreFoundation";
+        "_CFPropertyListCreateWithData" = "CoreFoundation";
+        "_CFRelease" = "CoreFoundation";
+        "_CFStringGetCString" = "CoreFoundation";
+        "_CFStringGetFileSystemRepresentation" = "CoreFoundation";
+        "_CFStringGetTypeID" = "CoreFoundation";
+        "___CFConstantStringClassReference" = "CoreFoundation";
+        "_kCFAllocatorDefault" = "CoreFoundation";
+        "_kCFAllocatorMalloc" = "CoreFoundation";
+        "_sysdir_start_search_path_enumeration" = "system_coreservices";
+        "_sysdir_get_next_search_path_enumeration" = "system_coreservices";
+      };
+    };
     dmesg = { installDir = "/sbin"; man = man8 "dmesg"; };
     getconf = {
       defines = [ "APPLE_GETCONF_UNDERSCORE" ];
@@ -136,6 +170,11 @@ mkCmds {
   inherit src toolchain;
   tools = lib.mapAttrs (_: t: t // { cflags = t.cflags or baseCflags; }) tools;
   sourceLists = import ./system-cmds-sources.nix;
+
+  postPatch = ''
+    # Unused legacy directory-search header; arch uses sysdir.h instead.
+    substituteInPlace arch/arch.c --replace-fail '#include <NSSystemDirectories.h>' ""
+  '';
 
   # Project-level Release settings (system_cmds.xcodeproj) over
   # xcconfigs/base.xcconfig. The project's GCC_TREAT_WARNINGS_AS_ERRORS = NO

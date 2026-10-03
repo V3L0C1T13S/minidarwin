@@ -10,6 +10,9 @@
   accton = [
     "accton/accton.c"
   ];
+  arch = [
+    "arch/arch.c"
+  ];
   dmesg = [
     "dmesg/dmesg.c"
   ];

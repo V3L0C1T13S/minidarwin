@@ -343,10 +343,11 @@ lib.makeScope pkgs.newScope (self: with self; {
     toolchain = toolchainStage3;
   };
 
-  # The system_cmds tools a plain userland has: sync, sysctl, getconf, ...
+  # The system_cmds tools a plain userland has: arch, sync, sysctl, getconf, ...
   systemCmds = callPackage ./pkgs/system-cmds/system-cmds.nix {
     toolchain = toolchainStage3;
   };
+  archTest = callPackage ./pkgs/system-cmds/arch-test.nix { };
 
   # cmp, diff, diff3, diffstat, patch, sdiff.
   patchCmds = callPackage ./pkgs/patch-cmds/patch-cmds.nix {
