@@ -75,6 +75,7 @@
             icu
             libxml2
             libxo
+            quickjs
             libressl
             openssl098
             nano
@@ -110,7 +111,7 @@
       checks = forAllSystems (system: pkgs:
         let scope = nativeScope pkgs;
         in {
-          inherit (scope) sdkTest runtimesTest libsystemTest libdispatchTest cxxLinkTest libxml2Test libxoTest topTest authTest releaseTest installerTest;
+          inherit (scope) sdkTest runtimesTest libsystemTest libdispatchTest cxxLinkTest libxml2Test libxoTest quickjsTest topTest authTest releaseTest installerTest;
         });
 
       # Full set for nix eval; cross.<arch> retargets it.

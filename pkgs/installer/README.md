@@ -46,6 +46,10 @@ non-literal `selected`/`enabled`/`active`, ...), external package
 references, hardlinks, device nodes, FIFOs, set-id bits, AppleDouble files,
 DTDs in any XML, and unknown PackageInfo or Distribution elements.
 
+MiniDarwin packages [QuickJS](../quickjs/README.md) as an engine for future
+Distribution JavaScript support. It is not yet integrated with mdpkg;
+installer-specific JavaScript globals and checks still need implementation.
+
 Bundle upgrade and relocation data (`bundle-version`, `relocate`, ...) is
 accepted and ignored: it only matters when the bundle is already installed,
 and mdpkg refuses reinstalls. There is no uninstall or upgrade.

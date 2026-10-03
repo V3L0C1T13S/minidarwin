@@ -406,6 +406,12 @@ lib.makeScope pkgs.newScope (self: with self; {
     toolchain = toolchainStage3;
   };
 
+  quickjsBuildRoot = callPackage ./pkgs/quickjs/build-root.nix { };
+  quickjs = callPackage ./pkgs/quickjs/quickjs.nix {
+    toolchain = toolchainStage3;
+  };
+  quickjsTest = callPackage ./pkgs/quickjs/quickjs-test.nix { };
+
   libressl = callPackage ./pkgs/libressl/libressl.nix {
     toolchain = toolchainStage3;
   };

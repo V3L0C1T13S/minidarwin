@@ -1,5 +1,5 @@
 # Content-addressed sources. Apple pins follow the macOS 26 / xnu-12377 set
-# except for explicitly noted legacy projects; LibreSSL and libxo are pinned upstream.
+# except for explicitly noted legacy projects; third-party projects are pinned upstream.
 { fetchFromGitHub, fetchurl }:
 
 let
@@ -131,6 +131,13 @@ in
     repo = "libxo";
     rev = "2.0.0";
     hash = "sha256-Mtxa+iLSitpcQYDkT8C3gYOKQAsAzgPybhogqVA8DGc=";
+  };
+  # QuickJS 2026-06-04 release (upstream does not tag releases).
+  quickjs = fetchFromGitHub {
+    owner = "bellard";
+    repo = "quickjs";
+    rev = "3d5e064e9dd67c70f7962836505a7fa067bf0a4e";
+    hash = "sha256-+EH0TJZHC009ImtLd2NyUyuNlHxNZZz6hN16LXB+cX8=";
   };
   # Apple does not publish its LibreSSL source. Use the portable upstream release.
   libressl = fetchurl {

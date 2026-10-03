@@ -3,7 +3,7 @@
 # the shell_cmds, file_cmds, text_cmds, adv_cmds, basic_cmds, system_cmds,
 # patch_cmds and misc_cmds tools, awk, file, curl, top, nano/pico, bash, Perl,
 # zsh, bzip2, zip/unzip and ncurses' own; the libraries they link (libedit, libncurses,
-# libutil, libsbuf, libmd, libz, libbz2, ICU, libxml2, libxo); LibreSSL as primary TLS
+# libutil, libsbuf, libmd, libz, libbz2, ICU, libxml2, libxo); QuickJS; LibreSSL as primary TLS
 # and a complete OpenSSL 0.9.8 install under /compat/OS X/10.7; terminfo; and the
 # CA bundle curl reads, /etc/ssl/cert.pem. No dyld yet, so nothing runs.
 { lib
@@ -42,6 +42,7 @@
 , icu
 , libxml2
 , libxo
+, quickjs
 , libressl
 , openssl098
 , nano
@@ -55,7 +56,7 @@
 }:
 
 let
-  cmds = [ shellCmds fileCmds textCmds advCmds basicCmds systemCmds patchCmds miscCmds awk file curl top nano bash darwinPerl zsh ncursesTools su sudo installer ];
+  cmds = [ shellCmds fileCmds textCmds advCmds basicCmds systemCmds patchCmds miscCmds awk file curl top nano bash darwinPerl zsh ncursesTools su sudo installer quickjs ];
   members = [ libSystem libsystemTree2 libcxxDylib libcxxabiDylib copyfile removefile ncurses ncursesPanel terminfo certPem libedit libutil libsbuf libmd zlib bzip2 zip icu libxml2 libxo libressl openssl098 ] ++ cmds;
 
   # Union of passthru.allowUndefined from all members.
@@ -130,6 +131,10 @@ mkDarwinPackage {
     for f in /usr/lib/libxo.0.dylib /usr/lib/libxo.dylib \
       /usr/include/libxo/xo.h /usr/bin/xo; do
       [ -e "$out$f" ] || { echo "rootfs: missing libxo file $f" >&2; exit 1; }
+    done
+    for f in /usr/bin/qjs /usr/bin/qjsc /usr/lib/quickjs/libquickjs.a \
+      /usr/include/quickjs/quickjs.h /usr/include/quickjs/quickjs-libc.h; do
+      [ -e "$out$f" ] || { echo "rootfs: missing QuickJS file $f" >&2; exit 1; }
     done
     for f in /usr/lib/libsbuf.dylib /usr/include/sbuf.h /usr/include/usbuf.h; do
       [ -e "$out$f" ] || { echo "rootfs: missing libsbuf file $f" >&2; exit 1; }
