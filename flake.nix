@@ -88,7 +88,9 @@
             rootfsRelease
             mdrootfs
             installer
-            installerBootstrap;
+            installerBootstrap
+            launchd
+            launchdBootstrap;
 
           # Stage 4 pass-2 members (pass-1 at legacyPackages.<system>.libsystemPass1).
           inherit (scope.libsystemPass2)
@@ -111,7 +113,7 @@
       checks = forAllSystems (system: pkgs:
         let scope = nativeScope pkgs;
         in {
-          inherit (scope) sdkTest runtimesTest libsystemTest libdispatchTest cxxLinkTest libxml2Test libxoTest quickjsTest topTest archTest authTest releaseTest installerTest;
+          inherit (scope) sdkTest runtimesTest libsystemTest libdispatchTest cxxLinkTest libxml2Test libxoTest quickjsTest topTest archTest authTest releaseTest installerTest launchdTest;
         });
 
       # Full set for nix eval; cross.<arch> retargets it.

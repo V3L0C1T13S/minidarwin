@@ -454,6 +454,13 @@ lib.makeScope pkgs.newScope (self: with self; {
   };
   installerTest = callPackage ./pkgs/installer/installer-test.nix { };
 
+  # Independent C++ init; host build is used only for isolated behavior tests.
+  launchd = callPackage ./pkgs/launchd/launchd.nix {
+    toolchain = toolchainStage4;
+  };
+  launchdBootstrap = pkgs.callPackage ./pkgs/launchd/bootstrap.nix { };
+  launchdTest = callPackage ./pkgs/launchd/launchd-test.nix { };
+
   #### stage 7: the rootfs ####################################################
 
   # Assembled rootfs (early - later stages add inputs here).

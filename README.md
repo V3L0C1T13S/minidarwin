@@ -42,6 +42,7 @@ nix build .#certPem               # /etc/ssl/cert.pem from security_certificates
 nix build .#bash .#zsh           # Apple shells at /bin/bash, /bin/sh and /bin/zsh
 nix build .#perl                 # Apple's Perl 5.34.1 and its standard library
 nix build .#ncursesTools          # clear, tput, tset/reset, infocmp, tic, toe (stage 6)
+nix build .#launchd .#launchdTest   # C++ init/supervisor and isolated host tests
 nix build .#rootfs                 # assembled tree at real paths (/usr/lib/system, etc.)
 nix build .#rootfsRelease          # that tree as a release: tarball, manifest, spec, bundle
 ```
@@ -100,6 +101,12 @@ Packages with install scripts need `-script-runner`; the host build ships a
 `sandbox-exec` one. See [pkgs/installer/README.md](pkgs/installer/README.md)
 for what is supported, how installs are made transactional, and receipts.
 
+### Launchd
+
+The rootfs includes an independent C++ launchd and launchctl for core process supervision.
+See [supported job keys and lifecycle behavior](pkgs/launchd/README.md). No jobs
+are enabled by default; dyld and boot infrastructure are still required to boot it.
+
 ### CI
 
 After the Linux verifier tests pass, GitHub Actions runs two parallel jobs on
@@ -150,7 +157,7 @@ as 0755, without Apple's setuid bit, which the rootfs format does not support.
 `topTest` checks the target architecture, sampling/display imports and library
 dependencies without executing the target.
 
-No `/usr/lib/dyld` yet (`libmach_o.a` builds; dyld link not started). Userland includes `bash`, `zsh`, `perl`, the `shell_cmds`, `file_cmds`, `text_cmds`, `adv_cmds`, `basic_cmds`, `patch_cmds` and `misc_cmds` tools, the basic `system_cmds` ones, `awk`, `top`, and ncurses' tools, with libedit, libncurses, libutil, libmd, LibreSSL, isolated legacy OpenSSL 0.9.8 and the terminfo database. There is no `vi`, `less`/`more` or `bc`. `wc`, `df`, `last` and `w`/`uptime` use Juniper libxo. `apply` and `w`/`uptime` link the FreeBSD-derived `libsbuf` sources in `pkgs/compat/sbuf`; `usbuf.h` is an alias for the full sbuf header. Imports from absent libraries are declared per tool, like the libsystem members' (`system_info` for user and group names, `system_m` for `awk`'s and `calendar`'s math, ...). No `launchd` - last open source was 2013 and depends on unreleased `libxpc`.
+No `/usr/lib/dyld` yet (`libmach_o.a` builds; dyld link not started). Userland includes `bash`, `zsh`, `perl`, the `shell_cmds`, `file_cmds`, `text_cmds`, `adv_cmds`, `basic_cmds`, `patch_cmds` and `misc_cmds` tools, the basic `system_cmds` ones, `awk`, `top`, and ncurses' tools, with libedit, libncurses, libutil, libmd, LibreSSL, isolated legacy OpenSSL 0.9.8 and the terminfo database. There is no `vi`, `less`/`more` or `bc`. `wc`, `df`, `last` and `w`/`uptime` use Juniper libxo. `apply` and `w`/`uptime` link the FreeBSD-derived `libsbuf` sources in `pkgs/compat/sbuf`; `usbuf.h` is an alias for the full sbuf header. Imports from absent libraries are declared per tool, like the libsystem members' (`system_info` for user and group names, `system_m` for `awk`'s and `calendar`'s math, ...). The independent C++ `launchd` implements core supervision; Apple’s Mach bootstrap and XPC interfaces remain absent.
 
 `fileCmds` includes `compress`/`uncompress`, `pax` (also installed as
 `tar`), and `gzip`/`gunzip`/`gzcat`/`zcat` with the gzip helper scripts.
@@ -170,4 +177,4 @@ Keep the set on one OS release of XNU. In particular `libsyscall` must match the
 
 ## License and Scope Notice
 
-MiniDarwin's MIT license applies only to the project's original build expressions, scripts, and documentation. It does not apply to third-party source code, headers, libraries, executables, or other software fetched, built, packaged, or distributed by those expressions and scripts. Those components retain their respective licenses and notices, which govern their use and redistribution. The MIT license for MiniDarwin's build files does not grant rights to those components.
+MiniDarwin's MIT license applies only to the project's original build expressions, scripts, C++ implementation, and documentation. It does not apply to third-party source code, headers, libraries, executables, or other software fetched, built, packaged, or distributed by those expressions and scripts. Those components retain their respective licenses and notices, which govern their use and redistribution. The MIT license for MiniDarwin's build files does not grant rights to those components.

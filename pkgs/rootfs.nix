@@ -53,10 +53,11 @@
 , su
 , sudo
 , installer
+, launchd
 }:
 
 let
-  cmds = [ shellCmds fileCmds textCmds advCmds basicCmds systemCmds patchCmds miscCmds awk file curl top nano bash darwinPerl zsh ncursesTools su sudo installer quickjs ];
+  cmds = [ shellCmds fileCmds textCmds advCmds basicCmds systemCmds patchCmds miscCmds awk file curl top nano bash darwinPerl zsh ncursesTools su sudo installer quickjs launchd ];
   members = [ libSystem libsystemTree2 libcxxDylib libcxxabiDylib copyfile removefile ncurses ncursesPanel terminfo certPem libedit libutil libsbuf libmd zlib bzip2 zip icu libxml2 libxo libressl openssl098 ] ++ cmds;
 
   # Union of passthru.allowUndefined from all members.
@@ -141,6 +142,9 @@ mkDarwinPackage {
     done
     for f in /bin/df /usr/bin/wc /usr/bin/last /usr/bin/w /usr/bin/uptime /usr/bin/apply; do
       [ -e "$out$f" ] || { echo "rootfs: missing utility $f" >&2; exit 1; }
+    done
+    for f in /sbin/launchd /bin/launchctl; do
+      [ -x "$out$f" ] || { echo "rootfs: missing launchd file $f" >&2; exit 1; }
     done
     for f in /usr/bin/su /usr/bin/sudo /usr/bin/sudoedit /usr/sbin/visudo \
       /private/etc/pam.d/su /private/etc/pam.d/sudo /private/etc/sudoers; do
