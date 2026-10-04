@@ -4,6 +4,7 @@
 , llvmVersion
 , toolchain
 , libcxxabi
+, llvmSource
 }:
 
 let
@@ -28,6 +29,13 @@ mkDarwinPackage {
     runHook preBuild
 
     mkdir -p obj
+    # dyld 1378 resolves Darwin's typed new/new[] weak definitions even for
+    # programs built against ordinary upstream C++ allocation operators.
+    # LLVM's published Apple ABI shims delegate to those real operators.
+    cp ${llvmSource}/libcxxabi/src/vendor/apple/shims.cpp apple-shims.cpp
+    export MD_SRCROOT=$PWD
+    md_compile obj "$CXX" -std=c++20 -fsized-deallocation \
+      -D_LIBCPP_BUILDING_LIBRARY -- "$PWD/apple-shims.cpp"
     md_dylib libc++abi.dylib /usr/lib/libc++abi.dylib obj \
       -Wl,-force_load,${libcxxabi}/usr/lib/libc++abi.a \
       ${lib.escapeShellArgs (map (s: "-Wl,-U,${s}") (lib.attrNames dyldUndefined))} \
@@ -49,7 +57,8 @@ mkDarwinPackage {
       ___cxa_allocate_exception ___cxa_free_exception \
       ___gxx_personality_v0 ___dynamic_cast ___cxa_guard_acquire \
       ___cxa_pure_virtual ___cxa_demangle \
-      __ZdlPv __Znwm __ZnwmSt11align_val_t
+      __ZdlPv __Znwm __ZnwmSt11align_val_t \
+      __ZnwmSt19__type_descriptor_t __ZnamSt19__type_descriptor_t
 
     runHook postInstall
   '';

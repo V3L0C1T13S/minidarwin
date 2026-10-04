@@ -112,12 +112,20 @@ if [ "$changed" = 1 ]; then
     libsystem_pthread pkgs/libsystem/libpthread-sources.nix
   gen_sources libmalloc libmalloc.xcodeproj/project.pbxproj \
     libsystem_malloc pkgs/libsystem/libmalloc-sources.nix
+  gen_sources Libinfo Libinfo.xcodeproj/project.pbxproj \
+    Libinfo pkgs/libsystem/libinfo-sources.nix
+  gen_sources Libm Libm.xcodeproj/project.pbxproj \
+    Libm.a pkgs/libsystem/libm-sources.nix
+  gen_sources Libm Libm.xcodeproj/project.pbxproj \
+    libmathCommon.o pkgs/libsystem/libmathcommon-sources.nix
 
   # Stage 5: dyld uses synchronized folders (Xcode 16); dyld-mighty is the real target.
   gen_sources dyld dyld.xcodeproj/project.pbxproj \
     dyld-mighty pkgs/dyld/dyld-sources.nix
   gen_sources dyld dyld.xcodeproj/project.pbxproj \
     libmach_o pkgs/dyld/libmach-o-sources.nix
+  gen_sources dyld dyld.xcodeproj/project.pbxproj \
+    libdyld.dylib pkgs/dyld/libdyld-sources.nix
 
   # Stage 6: the libraries sh links for line editing, and ls's libutil.
   gen_sources ncurses ncurses.xcodeproj/project.pbxproj \

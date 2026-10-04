@@ -31,8 +31,8 @@ Fd stdioFile(const std::string& path, bool input) {
                          O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK, 0600), "open stdio " + path);
   struct stat st{};
   if (fstat(fd.get(), &st) < 0) systemError("fstat stdio");
-  if (!S_ISREG(st.st_mode) && !(S_ISCHR(st.st_mode) && path == "/dev/null"))
-    throw Error("stdio must be a regular file or /dev/null");
+  if (!S_ISREG(st.st_mode) && !(S_ISCHR(st.st_mode) && (path == "/dev/null" || path == "/dev/console")))
+    throw Error("stdio must be a regular file, /dev/null or /dev/console");
   int flags = fcntl(fd.get(), F_GETFL);
   if (flags < 0 || fcntl(fd.get(), F_SETFL, flags & ~O_NONBLOCK) < 0) systemError("fcntl stdio");
   return fd;

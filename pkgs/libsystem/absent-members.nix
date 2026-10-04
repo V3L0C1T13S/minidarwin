@@ -8,7 +8,7 @@
   corecrypto = "closed source";
   commonCrypto = "closed source";
   cache = "closed source";
-  system_asl = "closed source";
+  system_asl = "closed source; runtime tree has Libc's BSD syslog only";
   system_trace = "closed source";
   system_sandbox = "closed source";
   system_coreservices = "closed source";
@@ -18,9 +18,9 @@
   system_m =
     if targetArch == "aarch64"
     then "Libm-2026 has no arm64"
-    else "Libm-2026 Intel sources not built yet";
-  system_info = "Libinfo needs opendirectory and xpc";
-  system_notify = "libnotify needs xpc and bootstrap";
+    else "Libm-2026 Intel: in the runtime tree only (libsystem-m.nix)";
+  system_info = "Libinfo, without opendirectory/xpc: in the runtime tree only (runtime-info.nix)";
+  system_notify = "libnotify needs xpc and bootstrap; runtime tree has a no-notifyd provider";
   system_darwin = "libdarwin needs xpc and bootstrap";
   copyfile = "packaged standalone; not linked into the libSystem member tree";
   removefile = "packaged standalone; not linked into the libSystem member tree";

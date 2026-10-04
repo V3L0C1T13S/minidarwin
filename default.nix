@@ -141,7 +141,9 @@ lib.makeScope pkgs.newScope (self: with self; {
         # dyld (stage 5) holes; x86_64 adds system_m long-double.
         allowUndefined = {
           "_dlsym" = "dyld";
-          "__availability_version_check" = "dyld";
+          # LLVM weak-imports this optional API and has its own fallback.
+          # The public dyld release does not export it.
+          "__availability_version_check" = "availability runtime";
         } // lib.optionalAttrs (targetArch != "aarch64") {
           "_scalbnl" = "system_m";
           "_logbl" = "system_m";
@@ -481,4 +483,131 @@ lib.makeScope pkgs.newScope (self: with self; {
   libmachO = callPackage ./pkgs/dyld/libmach-o.nix {
     toolchain = toolchainStage2;
   };
+
+  libdyld = callPackage ./pkgs/dyld/libdyld.nix {
+    toolchain = toolchainStage2;
+  };
+  runtimeInfo = callPackage ./pkgs/libsystem/runtime-info.nix {
+    toolchain = toolchainStage2;
+  };
+  libsystemM = callPackage ./pkgs/libsystem/libsystem-m.nix {
+    toolchain = toolchainStage2;
+  };
+  runtimeNotify = callPackage ./pkgs/libsystem/runtime-notify.nix {
+    toolchain = toolchainStage2;
+  };
+  runtimeAsl = callPackage ./pkgs/libsystem/runtime-asl.nix {
+    toolchain = toolchainStage2;
+  };
+  runtimeCryptoTest = callPackage ./pkgs/libsystem/runtime-crypto-test.nix { };
+  runtimeCrypto = callPackage ./pkgs/libsystem/runtime-crypto.nix {
+    toolchain = toolchainStage2;
+  };
+  # absent-members.nix entries the runtime tree supplies. runtimeCrypto,
+  # runtimeNotify and runtimeAsl are narrow providers, not the closed-source
+  # libraries; runtimeAsl is only the BSD syslog half of system_asl.
+  runtimeMembers = [ "dyld" "corecrypto" "system_info" "system_m" "system_notify" "system_asl" ];
+  libsystemRuntimeTree = callPackage ./pkgs/libsystem/libsystem-tree.nix {
+    name = "minidarwin-libsystem-runtime";
+    members = [ libsystemTree2 libdyld runtimeCrypto runtimeInfo libsystemM runtimeNotify runtimeAsl ];
+  };
+  libSystemRuntime = libSystem.override {
+    members = libsystemRuntimeTree;
+    initialize = true;
+    provided = runtimeMembers;
+  };
+  bootRootfs = rootfs.override {
+    libSystem = libSystemRuntime;
+    libsystemTree2 = libsystemRuntimeTree;
+    runtimeDyld = dyld;
+    # Every hole labelled with these is now defined by the runtime tree...
+    resolvedAbsences = [ "dyld" "corecrypto" "system_info" "system_m" "system_notify" ];
+    # ...and of system_asl, only the syslog functions are.
+    resolvedSymbols = [ "_syslog$DARWIN_EXTSN" "_openlog" "_closelog" ];
+  };
+  dyldObjects = callPackage ./pkgs/dyld/dyld-objects.nix {
+    toolchain = toolchainStage2;
+  };
+  dyldRuntimeArchives = callPackage ./pkgs/dyld/runtime-archives.nix {
+    toolchain = toolchainStage2;
+  };
+  dyld = callPackage ./pkgs/dyld/dyld.nix {
+    toolchain = toolchainStage2;
+  };
+  dyldDigestsTest = callPackage ./pkgs/dyld/digests-test.nix { };
+
+  kernel = callPackage ./pkgs/xnu/kernel.nix { };
+  kernelObjects = callPackage ./pkgs/xnu/kernel-objects.nix {
+    toolchain = (callPackage ./lib/toolchain.nix {
+      llvmPackages = llvmPackages // { clang-unwrapped = xnuClang; };
+    }) {
+      name = "minidarwin-kernel-toolchain";
+      sysroot = sdkHeaders;
+      resourceDir = clangResourceDir;
+      freestanding = true;
+    };
+  };
+  xnuClang = callPackage ./pkgs/xnu/clang.nix { };
+  xnuClangObjects = callPackage ./pkgs/xnu/frontend-objects.nix { };
+  iig = callPackage ./pkgs/xnu/iig.nix { };
+  efiLoader = callPackage ./pkgs/xnu/efi-loader.nix { };
+  kcTools = callPackage ./pkgs/xnu/kc-tools.nix { };
+  platformDrivers = callPackage ./pkgs/xnu/platform-drivers.nix { };
+  storageDrivers = platformDrivers.override { includeStorage = true; };
+  kernelCollection = callPackage ./pkgs/xnu/kernel-collection.nix { };
+  platformKernelCollection = kernelCollection.override {
+    kexts = map (name: "${platformDrivers}/System/Library/Extensions/${name}.kext")
+      [ "IOACPIFamily" "PDACPIPlatform" "IOPCIFamily" "AppleAPIC" "AppleI386PCI" ];
+  };
+  storageKernelCollection = kernelCollection.override {
+    kexts = map (name: "${storageDrivers}/System/Library/Extensions/${name}.kext")
+      [ "pthread" "IOACPIFamily" "PDACPIPlatform" "IOPCIFamily" "AppleAPIC" "AppleI386PCI"
+        "IOStorageFamily" "IOVirtIOFamily" "IOVirtIOBlock" "ext4" "Ext4FileSystemDriver" ];
+  };
+  storageBootImage = mkBootDisk {
+    name = "minidarwin-storage-boot-disk";
+    kernel = "${storageKernelCollection}/kernel";
+  };
+  rootMountTest = callPackage ./pkgs/xnu/root-mount-test.nix { };
+  bootTest = callPackage ./pkgs/xnu/boot-test.nix { };
+  rootMountFixture = callPackage ./pkgs/xnu/root-probe.nix { };
+  rootMountProbeImage = mkBootDisk {
+    name = "minidarwin-root-mount-probe-disk";
+    kernel = "${storageKernelCollection}/kernel";
+    rootPartition = "${rootMountFixture}/root.ext4";
+    bootArgs = "-v serial=3 keepsyms=1 rd=disk0s2";
+  };
+  qemuRootMountProbe = qemuEfi.override {
+    efiBootImage = rootMountProbeImage;
+    virtioBlock = true;
+  };
+  bootRootPartition = callPackage ./pkgs/xnu/root-image.nix { };
+  bootImage = mkBootDisk {
+    name = "minidarwin-boot-disk";
+    kernel = "${storageKernelCollection}/kernel";
+    rootPartition = "${bootRootPartition}/root.ext4";
+    bootArgs = "-v serial=3 keepsyms=1 rd=disk0s2";
+  };
+  qemuBoot = qemuEfi.override {
+    efiBootImage = bootImage;
+    virtioBlock = true;
+  };
+  platformBootImage = mkBootDisk {
+    name = "minidarwin-platform-boot-disk";
+    kernel = "${platformKernelCollection}/kernel";
+  };
+  qemuPlatform = qemuEfi.override { efiBootImage = platformBootImage; };
+  mkBootDisk = callPackage ./pkgs/xnu/boot-disk.nix { };
+  # Firmware disk only; a complete XNU/root-filesystem image is still pending.
+  efiBootImage = mkBootDisk { };
+  kernelBootImage = mkBootDisk {
+    name = "minidarwin-kernel-boot-disk";
+    kernel = "${kernelCollection}/kernel";
+  };
+  qemuEfi = callPackage ./pkgs/xnu/qemu-efi.nix { };
+  qemuKernel = qemuEfi.override { efiBootImage = kernelBootImage; };
+  trustCacheTest = callPackage ./pkgs/xnu/trust-cache-test.nix { };
+  kernelStartupTest = callPackage ./pkgs/xnu/kernel-startup-test.nix { };
+  kernelCryptoTest = callPackage ./pkgs/xnu/crypto-test.nix { };
+  bootDiskTest = callPackage ./pkgs/xnu/boot-disk-test.nix { };
 })

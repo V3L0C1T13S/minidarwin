@@ -50,7 +50,7 @@ where described below. Other keys and incorrect types are rejected.
 | `EnvironmentVariables` | Dictionary of strings. Base environment contains only PATH=/usr/bin:/bin:/usr/sbin:/sbin, then job overrides. Parent environment is not inherited. |
 | `WorkingDirectory` | Absolute path; otherwise inherits the daemon's working directory. |
 | `StandardInPath` | Absolute regular-file path; default /dev/null. |
-| `StandardOutPath`, `StandardErrorPath` | Absolute regular-file paths opened for append, created with mode 0600; default /dev/null. Parent directories must already exist. Symlinks and other device/FIFO paths are refused. |
+| `StandardOutPath`, `StandardErrorPath` | Absolute regular-file paths opened for append, created with mode 0600, or exactly `/dev/console`; default /dev/null. Parent directories must already exist. Symlinks and other device/FIFO paths are refused. |
 | `UserID`, `GroupID` | MiniDarwin extensions: numeric UID and GID, supplied together; require root and normal PID 1 mode. The reserved all-ones ID is rejected. |
 | `SupplementaryGroups` | MiniDarwin extension: up to 16 numeric GIDs; requires UserID and GroupID. Groups are cleared when identity is specified without this key. |
 

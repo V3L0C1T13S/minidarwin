@@ -54,16 +54,26 @@
 , sudo
 , installer
 , launchd
+, runtimeDyld ? null
+, resolvedAbsences ? [ ]
+, resolvedSymbols ? [ ]
 }:
 
 let
   cmds = [ shellCmds fileCmds textCmds advCmds basicCmds systemCmds patchCmds miscCmds awk file curl top nano bash darwinPerl zsh ncursesTools su sudo installer quickjs launchd ];
-  members = [ libSystem libsystemTree2 libcxxDylib libcxxabiDylib copyfile removefile ncurses ncursesPanel terminfo certPem libedit libutil libsbuf libmd zlib bzip2 zip icu libxml2 libxo libressl openssl098 ] ++ cmds;
+  members = [ libSystem libsystemTree2 libcxxDylib libcxxabiDylib copyfile removefile ncurses ncursesPanel terminfo certPem libedit libutil libsbuf libmd zlib bzip2 zip icu libxml2 libxo libressl openssl098 ] ++ cmds
+    ++ lib.optional (runtimeDyld != null) runtimeDyld;
 
   # Union of passthru.allowUndefined from all members.
-  declared =
+  declaredRaw =
     lib.foldl' (acc: p: acc // (p.allowUndefined or { })) { }
       (lib.attrValues libsystemPass2 ++ [ libcxxDylib libcxxabiDylib copyfile removefile ncurses ncursesPanel libedit libutil libsbuf libmd icu libxml2 libxo libressl openssl098 bzip2 zip ] ++ cmds);
+  # A runtime tree supplies these providers, or these symbols of a provider
+  # it supplies only in part. The whole-tree import check below still
+  # rejects any of them that the tree does not define.
+  declared = lib.filterAttrs
+    (sym: provider: !(lib.elem provider resolvedAbsences || lib.elem sym resolvedSymbols))
+    declaredRaw;
 
   # Runtime-provided (dyld defines in loaded process, not in a library).
   runtimeProvided = [ "dyld_stub_binder" ];

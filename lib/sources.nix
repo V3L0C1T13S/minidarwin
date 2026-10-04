@@ -11,6 +11,54 @@ let
     };
 in
 {
+  iig_tools = fetchFromGitHub {
+    owner = "PureDarwin";
+    repo = "iig-tools";
+    rev = "28010c688caab7eb5400b9c98faa5b1e538e0108";
+    hash = "sha256-MFc/y46GA3eolVC68nQT+2i8WGZ7R9/Ra3ux3lNJUEo=";
+  };
+
+  xnu_loader = fetchFromGitHub {
+    owner = "PureDarwin";
+    repo = "xnu-loader";
+    rev = "8295cd89c184785896d007d0554b398d22d8e32f";
+    hash = "sha256-Kumc+A8I0hWM7+mA2KXt4K1zwY/wpJFYbJ4C86JHgr8=";
+  };
+
+  kc_tools = fetchFromGitHub {
+    owner = "PureDarwin";
+    repo = "kc-tools";
+    rev = "802fbc70ef5431950f24e79b02f2d938385d91bd";
+    hash = "sha256-VwH7tU5+/6La41B2xwVtm/SWWJvUt46fNOudIWP7UiI=";
+  };
+
+  # Curate the open platform/storage drivers without importing PureDarwin's
+  # kernel, userland, proprietary SDK input, or crypto provider.
+  puredarwin_platform = fetchFromGitHub {
+    owner = "PureDarwin";
+    repo = "PureDarwin";
+    rev = "1bbaeb2ee6aa41e6f792a0b1e2943cc295b3b290";
+    hash = "sha256-8t2KGDJ79dGofwJw64lonHI9DIoXX3wLL6RQ+wdNVYI=";
+    postFetch = ''
+      mkdir -p "$TMPDIR/platform/Extensions"
+      for driver in IOACPIFamily PDACPIPlatform IOPCIFamily AppleAPIC AppleI386PCI \
+                    IOStorageFamily IOVirtIOFamily IOVirtIOBlock ext4 Ext4FileSystemDriver; do
+        cp -R "$out/src/Kernel/Extensions/$driver" "$TMPDIR/platform/Extensions/"
+      done
+      cp -R "$out/src/Kernel/libkmod" "$TMPDIR/platform/"
+      cp "$out"/*LICENSE* "$TMPDIR/platform/"
+      rm -rf "$out"
+      mv "$TMPDIR/platform" "$out"
+    '';
+  };
+
+  gnu_efi = fetchFromGitHub {
+    owner = "ncroxon";
+    repo = "gnu-efi";
+    rev = "4.0.2";
+    hash = "sha256-oIj0aNY4xU5OcO69TTjh5FcWzzkFd6jbenwzVvTXjqo=";
+  };
+
   bootstrap_cmds = apple "bootstrap_cmds" "bootstrap_cmds-138"
     "sha256-6JG0sysgqLlgcpIOXfN+F0/gxpIIHZZ5et3gmDBoBGQ=";
 
@@ -33,6 +81,10 @@ in
     "sha256-p4BndAag9d0XSMYWQ+c4myGv5qXbKx5E1VghudSbpTk=";
   Libinfo = apple "Libinfo" "Libinfo-600"
     "sha256-4InBEPi0n2EMo/8mIBib1Im4iTKRcRJ4IlAcLCigVGk=";
+  # Last release (2023), older than this train: only yp.x is used, through
+  # host rpcgen, for the <rpcsvc/yp.h> Libinfo's NIS client compiles against.
+  Librpcsvc = apple "Librpcsvc" "Librpcsvc-31"
+    "sha256-UWYdCQ9QsBqwM01bWr+igINAHSdSluB/FrOclC5AjTI=";
   libnotify = apple "libnotify" "Libnotify-348.120.4"
     "sha256-gs9SVkJfGydAe+79wmSxZVQB+ZVsz198T0kPTKtoKCY=";
   libplatform = apple "libplatform" "libplatform-375.120.2"

@@ -211,8 +211,9 @@ let
         "_freeaddrinfo" = "system_info";
         "_getaddrinfo" = "system_info";
         "_getnameinfo" = "system_info";
-        "___res_9_state" = "system_info";
-        "_res_9_init" = "system_info";
+        # <resolv.h>'s res_init; libresolv's, not Libinfo's.
+        "___res_9_state" = "resolv";
+        "_res_9_init" = "resolv";
       };
     };
     what = { };

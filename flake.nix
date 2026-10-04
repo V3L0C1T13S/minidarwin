@@ -43,6 +43,10 @@
             sdkStage3
             toolchainStage3
             libmachO
+            libdyld
+            efiLoader
+            efiBootImage
+            qemuEfi
             libcxxabiDylib
             libcxxDylib
             copyfile
@@ -105,6 +109,15 @@
             libsystemMalloc;
 
           sdk = scope.sdkHeaders;
+          kernel = (scopeFor pkgs "x86_64").kernel;
+          kernelCollection = (scopeFor pkgs "x86_64").kernelCollection;
+          kernelBootImage = (scopeFor pkgs "x86_64").kernelBootImage;
+          qemuKernel = (scopeFor pkgs "x86_64").qemuKernel;
+          bootImage = (scopeFor pkgs "x86_64").bootImage;
+          bootRootfs = (scopeFor pkgs "x86_64").bootRootfs;
+          bootRootPartition = (scopeFor pkgs "x86_64").bootRootPartition;
+          qemuBoot = (scopeFor pkgs "x86_64").qemuBoot;
+          rootMountProbeImage = (scopeFor pkgs "x86_64").rootMountProbeImage;
           perl = scope.darwinPerl;
           default = scope.sdkHeaders;
         });
@@ -113,7 +126,19 @@
       checks = forAllSystems (system: pkgs:
         let scope = nativeScope pkgs;
         in {
-          inherit (scope) sdkTest runtimesTest libsystemTest libdispatchTest cxxLinkTest libxml2Test libxoTest quickjsTest topTest archTest authTest releaseTest installerTest launchdTest;
+          inherit (scope) sdkTest runtimesTest libsystemTest libdispatchTest cxxLinkTest libxml2Test libxoTest quickjsTest topTest archTest authTest releaseTest installerTest launchdTest bootDiskTest trustCacheTest dyldDigestsTest runtimeCryptoTest;
+          dyldTest = (scopeFor pkgs "x86_64").dyld;
+          xnuClangTest = scope.xnuClang;
+          kernelCryptoTest = scope.kernelCryptoTest;
+          iigTest = scope.iig;
+          kernelLinkTest = (scopeFor pkgs "x86_64").kernel;
+          kernelCollectionTest = (scopeFor pkgs "x86_64").kernelCollection;
+          kernelStartupTest = (scopeFor pkgs "x86_64").kernelStartupTest;
+          platformCollectionTest = (scopeFor pkgs "x86_64").platformKernelCollection;
+          storageCollectionTest = (scopeFor pkgs "x86_64").storageKernelCollection;
+          rootMountTest = (scopeFor pkgs "x86_64").rootMountTest;
+          bootTest = (scopeFor pkgs "x86_64").bootTest;
+          libSystemRuntimeTest = (scopeFor pkgs "x86_64").libSystemRuntime;
         });
 
       # Full set for nix eval; cross.<arch> retargets it.
@@ -140,6 +165,18 @@
 
       # `nix run .#mdrootfs -- verify --bundle ...` (docs/rootfs-spec.md).
       apps = forAllSystems (system: pkgs: {
+        qemuBoot = {
+          type = "app";
+          program = "${(scopeFor pkgs "x86_64").qemuBoot}/bin/minidarwin-qemu-efi";
+        };
+        qemuKernel = {
+          type = "app";
+          program = "${(scopeFor pkgs "x86_64").qemuKernel}/bin/minidarwin-qemu-efi";
+        };
+        qemuEfi = {
+          type = "app";
+          program = "${(nativeScope pkgs).qemuEfi}/bin/minidarwin-qemu-efi";
+        };
         mdpkg = {
           type = "app";
           program = "${(nativeScope pkgs).installerBootstrap}/bin/mdpkg";

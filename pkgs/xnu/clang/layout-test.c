@@ -1,0 +1,30 @@
+// SPDX-License-Identifier: MIT
+struct pointer_data { void *p; unsigned long data; };
+struct data_pointer { unsigned long data; void *p; };
+struct same_layout { char *q; double d; };
+struct padded { char data; void *p; };
+union overlap { void *p; unsigned long data; };
+typedef unsigned long pointer_integer __attribute__((annotate("xnu:pointer")));
+struct annotated { pointer_integer p; unsigned long data; };
+struct bits { unsigned int a : 1; unsigned int b : 31; void *p; };
+struct array { void *p[3]; };
+struct dual { unsigned long value __attribute__((annotate("xnu:dual"))); };
+struct packed { char data; void *p; } __attribute__((packed));
+struct atomic_pointer { _Atomic(void *) p; unsigned long data; };
+
+_Static_assert(__builtin_xnu_type_summary(struct pointer_data) == 6, "mixed");
+_Static_assert(__builtin_xnu_type_summary(struct array) == 2, "pointer array");
+_Static_assert(__builtin_xnu_type_summary(union overlap) == 8, "union overlap");
+_Static_assert(__builtin_xnu_types_compatible(struct pointer_data, struct same_layout), "equivalent layouts");
+_Static_assert(!__builtin_xnu_types_compatible(struct pointer_data, struct data_pointer), "pointer position matters");
+_Static_assert(__builtin_xnu_types_compatible(struct pointer_data, struct annotated), "typedef annotations");
+_Static_assert(__builtin_xnu_types_compatible(struct padded, struct bits), "bitfields and padding");
+_Static_assert(!__builtin_xnu_types_compatible(struct pointer_data, void), "void matches only void");
+_Static_assert(__builtin_xnu_types_compatible(void, void), "void");
+_Static_assert(__builtin_xnu_types_compatible(char, int), "granules rather than byte size");
+_Static_assert(__builtin_xnu_types_compatible(struct pointer_data, struct atomic_pointer), "atomic pointers");
+_Static_assert(__builtin_xnu_type_summary(struct dual) == 16, "dual annotation");
+_Static_assert(__builtin_strcmp(__builtin_xnu_type_signature(struct pointer_data), "12") == 0, "signature");
+_Static_assert(__builtin_strcmp(__builtin_xnu_type_signature(struct data_pointer), "21") == 0, "reverse");
+_Static_assert(__builtin_strcmp(__builtin_xnu_type_signature(struct array), "111") == 0, "array");
+_Static_assert(__builtin_strcmp(__builtin_xnu_type_signature(struct packed), "31") == 0, "packed overlap");

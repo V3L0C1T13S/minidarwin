@@ -21,6 +21,12 @@ nix build .#libcxx                 # libc++.a (on compiler-rt + libunwind + libc
 nix build .#libdispatch            # Apple's core libdispatch.dylib
 nix build .#libSystem              # umbrella libSystem.B.dylib (includes dispatch)
 nix build .#libmachO               # dyld's Mach-O reader (stage 5)
+nix build .#libdyld                # public dyld API library (stage 5)
+nix build .#cross.x86_64.dyld       # self-contained x86_64 dynamic linker
+nix build .#efiBootImage .#bootDiskTest # EFI disk and firmware/loader checks
+nix run .#qemuEfi                  # boot the EFI loader with QEMU TCG
+nix build .#kernel .#kernelBootImage # real x86_64 XNU and its EFI disk
+nix run .#qemuKernel               # kernel startup development with QEMU TCG
 nix build .#libcxxDylib .#libcxxabiDylib
 nix build .#sdkStage4              # sysroot where plain `-lc++` links (RTTI included)
 nix build .#ncurses .#libedit     # libncurses.5.4.dylib, libedit.3.dylib (stage 6)
@@ -193,7 +199,7 @@ sudoers to 0644 rather than the 0440 expected by sudo. Ownership and these
 permissions would also need provisioning before operational use; the build
 does not alter permissions on the host.
 
-No `/usr/lib/dyld` yet (`libmach_o.a` builds; dyld link not started). Userland includes `bash`, `zsh`, `perl`, the `shell_cmds`, `file_cmds`, `text_cmds`, `adv_cmds`, `basic_cmds`, `patch_cmds` and `misc_cmds` tools, the basic `system_cmds` ones, `awk`, `top`, and ncurses' tools, with libedit, libncurses, libutil, libmd, LibreSSL, isolated legacy OpenSSL 0.9.8 and the terminfo database. There is no `vi`, `less`/`more` or `bc`. `wc`, `df`, `last` and `w`/`uptime` use Juniper libxo. `apply` and `w`/`uptime` link the FreeBSD-derived `libsbuf` sources in `pkgs/compat/sbuf`; `usbuf.h` is an alias for the full sbuf header. Imports from absent libraries are declared per tool, like the libsystem members' (`system_info` for user and group names, `system_m` for `awk`'s and `calendar`'s math, ...). The independent C++ `launchd` implements core supervision; Apple’s Mach bootstrap and XPC interfaces remain absent.
+`libmach_o.a`, `libdyld.dylib`, and the self-contained x86_64 `/usr/lib/dyld` now build. The standalone loader has no dynamic dependencies or unresolved symbols, and loads launchd and its jobs under the new kernel. The real XNU release kernel also builds and reaches its version banner in QEMU. `kernelBootImage` assembles a source-built EFI loader and kernel collection; the storage collection includes source-built platform, pthread, virtio-block and ext4 drivers and mounts a root partition in QEMU. `bootImage` assembles the runtime rootfs with dyld and initialized libSystem, and boots in QEMU to launchd running `uname -a` through `/bin/sh` (`nix run .#qemuBoot`; checked by `bootTest`). See [boot development](docs/boot.md) for outputs and validation boundaries. Userland includes `bash`, `zsh`, `perl`, the `shell_cmds`, `file_cmds`, `text_cmds`, `adv_cmds`, `basic_cmds`, `patch_cmds` and `misc_cmds` tools, the basic `system_cmds` ones, `awk`, `top`, and ncurses' tools, with libedit, libncurses, libutil, libmd, LibreSSL, isolated legacy OpenSSL 0.9.8 and the terminfo database. There is no `vi`, `less`/`more` or `bc`. `wc`, `df`, `last` and `w`/`uptime` use Juniper libxo. `apply` and `w`/`uptime` link the FreeBSD-derived `libsbuf` sources in `pkgs/compat/sbuf`; `usbuf.h` is an alias for the full sbuf header. Imports from absent libraries are declared per tool, like the libsystem members' (`system_info` for user and group names, `system_m` for `awk`'s and `calendar`'s math, ...). The independent C++ `launchd` implements core supervision; Apple’s Mach bootstrap and XPC interfaces remain absent.
 
 `fileCmds` includes `compress`/`uncompress`, `pax` (also installed as
 `tar`), and `gzip`/`gunzip`/`gzcat`/`zcat` with the gzip helper scripts.

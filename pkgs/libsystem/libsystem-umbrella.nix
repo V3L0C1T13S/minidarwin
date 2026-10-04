@@ -8,11 +8,15 @@
 , targetArch
   # The pass-2 tree.
 , members
+, initialize ? false
+  # absent-members.nix entries this tree supplies after all (runtime members).
+, provided ? [ ]
 }:
 
 let
   requiredLibs = builtins.readFile "${sources.Libsystem}/requiredlibs"; # one entry/line; multi-name lines are preference lists
-  absentRequired = lib.attrNames (import ./absent-members.nix { inherit targetArch; }); # requiredlibs missing due to absent/closed
+  absentRequired = lib.attrNames (lib.filterAttrs (name: _: !(lib.elem name provided))
+    (import ./absent-members.nix { inherit targetArch; }));
   currentVersion = "159"; # CURRENT_VERSION_STRING_ from Libsystem.xcconfig
 in
 
@@ -67,6 +71,11 @@ mkDarwinPackage {
     # Link with -reexport-l (no sources).
     mapfile -t reexports < <(sed 's/^/-Wl,-reexport-l/' present.txt)
     mkdir -p obj
+    ${lib.optionalString initialize ''
+      cp ${./runtime-init.c} runtime-init.c
+      export MD_SRCROOT=$PWD
+      md_compile obj "$CC" -std=gnu11 -fno-stack-protector -- "$PWD/runtime-init.c"
+    ''}
     MD_CURRENT_VERSION=${currentVersion} \
     md_dylib libSystem.B.dylib /usr/lib/libSystem.B.dylib obj \
       -Wl,-search_paths_first \
@@ -90,7 +99,7 @@ mkDarwinPackage {
     md_verify_pure   $out/usr/lib/libSystem.B.dylib
     md_verify_signed $out/usr/lib/libSystem.B.dylib
 
-    # Umbrella has no own symbols; verify each member is re-exported.
+    # Verify each member is re-exported, including the runtime initializer's dependencies.
     while read -r m; do
       md_verify_reexports $out/usr/lib/libSystem.B.dylib "/usr/lib/system/lib$m.dylib"
     done < present.txt

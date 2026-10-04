@@ -273,7 +273,9 @@ class Supervisor {
         drainExecError(*managed);
         // Keep the leader's zombie until its group has been signaled. Its PID
         // cannot be reused for an unrelated group while we perform cleanup.
-        if (kill(-info.si_pid, SIGKILL) < 0 && errno != ESRCH) log("group cleanup failed");
+        // XNU reports EPERM, not ESRCH, when that zombie is all that is left.
+        if (kill(-info.si_pid, SIGKILL) < 0 && errno != ESRCH && errno != EPERM)
+          log("group cleanup failed: " + std::string(std::strerror(errno)));
       }
       int status = 0;
       pid_t result;
@@ -386,8 +388,10 @@ public:
 
 int main(int argc, char** argv) {
   // Ensure internally allocated descriptors can never occupy stdio slots.
+  // PID 1 starts with none; give it the console so its diagnostics are seen.
   for (int fd = 0; fd < 3; ++fd) if (fcntl(fd, F_GETFD) < 0 && errno == EBADF) {
-    int opened = open("/dev/null", O_RDWR);
+    int opened = getpid() == 1 ? open("/dev/console", O_RDWR | O_NOCTTY) : -1;
+    if (opened < 0) opened = open("/dev/null", O_RDWR);
     if (opened < 0) return 1;
     if (opened != fd) { if (dup2(opened, fd) < 0) return 1; close(opened); }
   }
