@@ -21,7 +21,7 @@ or console session yet.
 | `bootRootfs` | Runtime tree with standalone dyld and initialized libSystem |
 | `bootRootPartition` | Source-built ext4 filesystem containing the runtime tree |
 | `bootImage` | GPT disk with EFI loader, storage collection, and ext4 root partition |
-| `qemuBoot` | QEMU runner with the assembled disk attached through virtio-block |
+| `qemuBoot` | QEMU runner that boots the assembled disk (`shellBootImage`) to an interactive `/bin/sh` on this terminal; Ctrl-A X quits |
 | `rootMountTest` | Mounts a fixture, then checks the expected missing PID 1 failure |
 | `bootTest` | Boots `bootImage` to launchd running `uname -a` through `/bin/sh` |
 | `kernelBootImage` | GPT/FAT disk containing the EFI loader and kernel collection |
@@ -48,7 +48,7 @@ nix run .#qemuEfi
 nix build .#kernel .#kernelBootImage
 nix run .#qemuKernel
 nix build .#bootImage
-nix run .#qemuBoot
+nix run .#qemuBoot   # drops you into a shell; Ctrl-A X quits QEMU
 nix build .#checks.aarch64-darwin.bootTest   # or x86_64-darwin
 # Or supply another assembled image:
 nix run .#qemuEfi -- /absolute/path/to/disk.img

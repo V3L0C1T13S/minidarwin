@@ -588,8 +588,17 @@ lib.makeScope pkgs.newScope (self: with self; {
     rootPartition = "${bootRootPartition}/root.ext4";
     bootArgs = "-v serial=3 keepsyms=1 rd=disk0s2";
   };
+  # Same root as bootImage, but PID 1's job is a console shell, not the proof.
+  shellRootPartition = callPackage ./pkgs/xnu/root-image.nix { interactive = true; };
+  shellBootImage = mkBootDisk {
+    name = "minidarwin-shell-boot-disk";
+    kernel = "${storageKernelCollection}/kernel";
+    rootPartition = "${shellRootPartition}/root.ext4";
+    bootArgs = "-v serial=3 keepsyms=1 rd=disk0s2";
+  };
   qemuBoot = qemuEfi.override {
-    efiBootImage = bootImage;
+    efiBootImage = shellBootImage;
+    interactive = true;
     virtioBlock = true;
   };
   platformBootImage = mkBootDisk {

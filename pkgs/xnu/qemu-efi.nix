@@ -1,4 +1,4 @@
-{ lib, writeShellApplication, qemu, efiBootImage, virtioBlock ? false }:
+{ lib, writeShellApplication, qemu, efiBootImage, virtioBlock ? false, interactive ? false }:
 writeShellApplication {
   name = "minidarwin-qemu-efi";
   runtimeInputs = [ qemu ];
@@ -12,6 +12,9 @@ writeShellApplication {
       echo "disk image does not exist: $disk" >&2
       exit 1
     fi
+    ${lib.optionalString interactive ''
+    echo "MiniDarwin: console shell on this terminal; Ctrl-A X quits QEMU." >&2
+    ''}
     # Each run gets writable variables and a temporary disk overlay.
     work=$(mktemp -d "''${TMPDIR:-/tmp}/minidarwin-qemu.XXXXXX")
     trap 'rm -rf "$work"' EXIT
@@ -25,7 +28,7 @@ writeShellApplication {
       ${if virtioBlock then ''-drive "if=none,id=boot,file=$disk,format=raw,snapshot=on" -device virtio-blk-pci,drive=boot,disable-legacy=on'' else ''-drive "file=$disk,format=raw,snapshot=on"''} \
       -object rng-random,id=rng0,filename=/dev/urandom \
       -device virtio-rng-pci,rng=rng0 \
-      -display none -serial stdio -serial null -serial null \
-      -monitor none -net none -no-reboot
+      -display none ${if interactive then "-serial mon:stdio" else "-serial stdio"} -serial null -serial null \
+      ${if interactive then "" else "-monitor none"} -net none -no-reboot
   '';
 }

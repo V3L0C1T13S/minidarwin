@@ -12,6 +12,8 @@ stdenvNoCC.mkDerivation {
     substituteInPlace Extensions/IOPCIFamily/IOPCIDevice.cpp \
       --replace-fail 'IODelete(savedConfig, IOPCIConfigShadow, 1);' \
         'IOPCIConfigShadow *shadowToFree = reinterpret_cast<IOPCIConfigShadow *>(savedConfig); IODelete(shadowToFree, IOPCIConfigShadow, 1);'
+
+    python3 ${./patch-platform-clock.py} Extensions/PDACPIPlatform
   '';
   postUnpack = lib.optionalString includePthread ''
     mkdir -p source/Extensions/pthread

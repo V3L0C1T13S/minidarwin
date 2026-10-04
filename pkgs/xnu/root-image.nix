@@ -1,5 +1,30 @@
 # Stage a writable runtime filesystem for the source-built ext4 driver.
-{ runCommand, python3, e2fsprogs, bootRootfs }:
+# `interactive` swaps the one-shot boot proof (what `bootTest` checks) for a
+# console shell that launchd restarts when it exits.
+{ runCommand, python3, e2fsprogs, bootRootfs, interactive ? false }:
+let
+  job = if interactive then ''
+    <key>Label</key><string>org.minidarwin.console-shell</string>
+    <key>ProgramArguments</key><array>
+      <string>/bin/sh</string><string>-c</string>
+      <string>/usr/bin/uname -a; exec /bin/sh -i</string>
+    </array>
+    <key>EnvironmentVariables</key><dict>
+      <key>TERM</key><string>xterm</string>
+      <key>HOME</key><string>/</string>
+    </dict>
+    <key>WorkingDirectory</key><string>/</string>
+    <key>KeepAlive</key><true/>
+    <key>ThrottleInterval</key><integer>1</integer>
+    <key>StandardInPath</key><string>/dev/console</string>
+  '' else ''
+    <key>Label</key><string>org.minidarwin.boot-proof</string>
+    <key>ProgramArguments</key><array>
+      <string>/bin/sh</string><string>-c</string>
+      <string>/usr/bin/uname -a &amp;&amp; printf 'MiniDarwin: userland boot complete\n'</string>
+    </array>
+  '';
+in
 runCommand "minidarwin-boot-root-partition"
 { nativeBuildInputs = [ python3 e2fsprogs ]; } ''
   cp -R ${bootRootfs}/. root
@@ -17,11 +42,7 @@ runCommand "minidarwin-boot-root-partition"
   cat > root/System/Library/LaunchDaemons/org.minidarwin.boot-proof.plist <<'PLIST'
   <?xml version="1.0" encoding="UTF-8"?>
   <plist version="1.0"><dict>
-    <key>Label</key><string>org.minidarwin.boot-proof</string>
-    <key>ProgramArguments</key><array>
-      <string>/bin/sh</string><string>-c</string>
-      <string>/usr/bin/uname -a &amp;&amp; printf 'MiniDarwin: userland boot complete\n'</string>
-    </array>
+    ${job}
     <key>RunAtLoad</key><true/>
     <key>StandardOutPath</key><string>/dev/console</string>
     <key>StandardErrorPath</key><string>/dev/console</string>
