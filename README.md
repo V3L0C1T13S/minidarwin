@@ -30,18 +30,20 @@ nix build .#libutil .#fileCmds    # libutil.dylib; ls, cp, mv, rm, touch, readli
 nix build .#libmd .#textCmds      # libmd.dylib; cat, grep, sed, sort, head, tail, md5, ... (stage 6)
 nix build .#advCmds .#basicCmds    # ps, stty, tty, locale, ...; mesg, write (stage 6)
 nix build .#top                   # Apple process monitor and man page (stage 6)
-nix build .#systemCmds            # sync, sysctl, getconf, dmesg, zic, ... (stage 6)
+nix build .#systemCmds            # arch, machine, sync, sysctl, getconf, ... (stage 6)
 nix build .#patchCmds .#miscCmds .#awk  # diff, cmp, patch; cal, tsort, units; awk (stage 6)
 nix build .#libressl              # primary TLS libraries and /usr/bin/openssl (stage 6)
 nix build .#curl                  # /usr/bin/curl and static libcurl, linked to LibreSSL (stage 6)
 nix build .#bzip2                 # libbz2, bzip2, bunzip2 and bzcat (stage 6)
 nix build .#zip                   # zip, unzip and related utilities (stage 6)
 nix build .#icu .#libxml2         # ICU 76 Unicode data/libraries; libxml2 with ICU support (stage 6)
+nix build .#quickjs               # qjs, qjsc and the static JavaScript embedding library (stage 6)
 nix build .#openssl098            # OpenSSL 0.9.8 under /compat/OS X/10.7 (stage 6)
 nix build .#certPem               # /etc/ssl/cert.pem from security_certificates' roots (stage 6)
 nix build .#bash .#zsh           # Apple shells at /bin/bash, /bin/sh and /bin/zsh
 nix build .#perl                 # Apple's Perl 5.34.1 and its standard library
 nix build .#ncursesTools          # clear, tput, tset/reset, infocmp, tic, toe (stage 6)
+nix build .#su .#sudo            # su, sudo/sudoedit and visudo, with PAM configuration (stage 6)
 nix build .#launchd .#launchdTest   # C++ init/supervisor and isolated host tests
 nix build .#rootfs                 # assembled tree at real paths (/usr/lib/system, etc.)
 nix build .#rootfsRelease          # that tree as a release: tarball, manifest, spec, bundle
@@ -101,6 +103,11 @@ Packages with install scripts need `-script-runner`; the host build ships a
 `sandbox-exec` one. See [pkgs/installer/README.md](pkgs/installer/README.md)
 for what is supported, how installs are made transactional, and receipts.
 
+QuickJS supplies `qjs`, `qjsc`, a static embedding library and headers for
+future Distribution JavaScript support. The rootfs includes the package;
+`mdpkg` still rejects Distribution JavaScript. See
+[pkgs/quickjs/README.md](pkgs/quickjs/README.md) for build checks and embedding.
+
 ### Launchd
 
 The rootfs includes an independent C++ launchd and launchctl for core process supervision.
@@ -146,6 +153,16 @@ Not every `Libsystem/requiredlibs` entry is buildable from released source (see 
 
 Each member's `allowUndefined` lists exactly which symbols it expects from absent libs - no blanket `dynamic_lookup`. `rootfs` checks that every undefined import is declared and every declaration is still needed.
 
+`systemCmds` includes Apple's `arch` and its `machine` alias with both man
+pages. On ARM64, `arch -x86_64 command` accepts the Intel architecture and
+submits CPU/subtype preferences to the kernel through `posix_spawn` with
+`POSIX_SPAWN_SETEXEC`, as on macOS. MiniDarwin does not supply Rosetta 2;
+the kernel decides whether the requested binary can run. The macOS ARM64
+affinity reset is retained. Plist preferences retain their CoreFoundation
+and `system_coreservices` imports, declared absent until those libraries
+are built. `archTest` checks launch imports and verifies that Apple's ARM64
+CPU predicate accepts Intel without executing target programs.
+
 LibreSSL Portable 4.3.2 supplies the primary `libcrypto`/`libssl` and `openssl` tool. Curl links LibreSSL. Apple's OpenSSL 0.9.8 build remains available as `.#openssl098`, but its complete install and dylib install names live under `/compat/OS X/10.7`; primary binaries do not link it. Apple does not publish the LibreSSL source used by macOS, so MiniDarwin pins the portable upstream release.
 
 Apple's `top` is built from `top-144`, with ncurses' `libpanel`, and installed
@@ -156,6 +173,25 @@ The full sampling and interactive code is retained. The executable is installed
 as 0755, without Apple's setuid bit, which the rootfs format does not support.
 `topTest` checks the target architecture, sampling/display imports and library
 dependencies without executing the target.
+
+`su` comes from `shell_cmds-329`; `sudo`, `sudoedit` and `visudo` come from
+[Apple's sudo-114.100.11 source](https://github.com/apple-oss-distributions/sudo/tree/sudo-114.100.11)
+(sudo 1.9.17p2). The rootfs includes their man pages, Apple's sudoers file and
+PAM configurations. Both retain PAM authentication; `su` retains BSM audit
+calls and optional EndpointSecurity notifications through dyld. `sudo` uses
+its static sudoers policy, with Apple's library validation and SIP checks;
+MDM and EndpointSecurity integration are disabled because their private
+headers are not released. OpenPAM and OpenBSM headers are pinned separately;
+their libraries, PAM modules, account lookup and rootless implementations
+remain absent, with exact imports declared per executable. `authTest`
+checks authentication, policy and execution code without running targets.
+
+These are buildable artifacts, not working privilege escalation in the
+current rootfs: dyld and the authentication services are still missing.
+Executables ship as 0755 without setuid, and the release format normalizes
+sudoers to 0644 rather than the 0440 expected by sudo. Ownership and these
+permissions would also need provisioning before operational use; the build
+does not alter permissions on the host.
 
 No `/usr/lib/dyld` yet (`libmach_o.a` builds; dyld link not started). Userland includes `bash`, `zsh`, `perl`, the `shell_cmds`, `file_cmds`, `text_cmds`, `adv_cmds`, `basic_cmds`, `patch_cmds` and `misc_cmds` tools, the basic `system_cmds` ones, `awk`, `top`, and ncurses' tools, with libedit, libncurses, libutil, libmd, LibreSSL, isolated legacy OpenSSL 0.9.8 and the terminfo database. There is no `vi`, `less`/`more` or `bc`. `wc`, `df`, `last` and `w`/`uptime` use Juniper libxo. `apply` and `w`/`uptime` link the FreeBSD-derived `libsbuf` sources in `pkgs/compat/sbuf`; `usbuf.h` is an alias for the full sbuf header. Imports from absent libraries are declared per tool, like the libsystem members' (`system_info` for user and group names, `system_m` for `awk`'s and `calendar`'s math, ...). The independent C++ `launchd` implements core supervision; Apple’s Mach bootstrap and XPC interfaces remain absent.
 
