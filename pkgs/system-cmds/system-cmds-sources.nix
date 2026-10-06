@@ -28,6 +28,10 @@
   hostinfo = [
     "hostinfo/hostinfo.c"
   ];
+  login = [
+    "login/login.c"
+    "login/login_audit.c"
+  ];
   mkfile = [
     "mkfile/mkfile.c"
   ];

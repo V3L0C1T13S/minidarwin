@@ -6,7 +6,7 @@
 #
 # Not built, among the rest: the tools that need frameworks or libraries that
 # are not released or not built (chpass, chkpasswd, dynamic_pager,
-# fs_usage, gcore, iostat, login, nvram, reboot, shutdown, latency,
+# fs_usage, gcore, iostat, nvram, reboot, shutdown, latency,
 # sc_usage, ...), the set-uid ones the rootfs format cannot mark (at,
 # newgrp, passwd), and Apple-internal diagnostics (kpgo, stackshot, zlog, ...).
 { lib
@@ -16,6 +16,7 @@
 , runCommand
 , gawk
 , callPackage
+, authHeaders
 }:
 
 let
@@ -100,6 +101,47 @@ let
       includes = [ "getconf" ]; # the generated files include "getconf.h"
     };
     hostinfo = { man = man8 "hostinfo"; };
+    login = {
+      # INSTALL_MODE_FLAG u+s: installed 0755, as su is -- the rootfs format
+      # has no set-id bits. The entitlements are not carried either.
+      man."login/login.1" = "/usr/share/man/man1/login.1";
+      defines = [ "USE_PAM" "USE_BSM_AUDIT" ];
+      cflags = baseCflags ++ [ "-I${authHeaders}" "-I${./login-include}" ];
+      allowUndefined = {
+        "_pam_start" = "pam";
+        "_pam_end" = "pam";
+        "_pam_authenticate" = "pam";
+        "_pam_acct_mgmt" = "pam";
+        "_pam_chauthtok" = "pam";
+        "_pam_setcred" = "pam";
+        "_pam_set_item" = "pam";
+        "_pam_get_item" = "pam";
+        "_pam_getenvlist" = "pam";
+        "_pam_open_session" = "pam";
+        "_pam_strerror" = "pam";
+        "_pam_close_session" = "pam";
+        "_openpam_ttyconv" = "pam";
+        "_audit_set_terminal_id" = "bsm";
+        "_au_close" = "bsm";
+        "_au_open" = "bsm";
+        "_au_to_return32" = "bsm";
+        "_au_to_subject32_ex" = "bsm";
+        "_au_to_text" = "bsm";
+        "_au_user_mask" = "bsm";
+        "_au_write" = "bsm";
+        # Weak, as Apple links libEndpointSecuritySystem; see login-include.
+        "_ess_notify_login_login" = "EndpointSecuritySystem";
+        "_ess_notify_login_logout" = "EndpointSecuritySystem";
+        "_getgrnam" = "system_info";
+        "_getpwnam_r" = "system_info";
+        "_endpwent" = "system_info";
+        "_initgroups" = "system_info";
+        "_getlastlogxbyname" = "system_asl"; # utmpx, see shell_cmds' who
+        "_openlog" = "system_asl";
+        "_syslog$DARWIN_EXTSN" = "system_asl";
+        "_environ" = "dyld";
+      };
+    };
     mkfile = { installDir = "/usr/sbin"; man = man8 "mkfile"; };
     nologin = {
       installDir = "/sbin";
@@ -172,6 +214,13 @@ mkCmds {
   sourceLists = import ./system-cmds-sources.nix;
 
   postPatch = ''
+    # As su: <bsm/audit_session.h> is not released; the pinned xnu's
+    # <bsm/audit.h> declares the session types and flags login uses.
+    substituteInPlace login/login.c login/login_audit.c \
+      --replace-fail '#include <bsm/audit_session.h>' '#include <bsm/audit.h>'
+    # launchd's <servers/bootstrap.h> is unreleased, and login uses nothing
+    # from it.
+    substituteInPlace login/login.c --replace-fail '#include <servers/bootstrap.h>' ""
     # Unused legacy directory-search header; arch uses sysdir.h instead.
     substituteInPlace arch/arch.c --replace-fail '#include <NSSystemDirectories.h>' ""
   '';
@@ -189,5 +238,10 @@ mkCmds {
     "-Werror=strict-prototypes" # WARNING_CFLAGS
   ];
   defines = [ ];
+  # login's pam.d CopyFiles phase.
+  extraInstall = ''
+    install -Dm644 login/pam.d/login $out/private/etc/pam.d/login
+    install -Dm644 login/pam.d/login.term $out/private/etc/pam.d/login.term
+  '';
   ldflags = [ "-Wl,-dead_strip" ]; # DEAD_CODE_STRIPPING
 }
