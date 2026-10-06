@@ -463,6 +463,13 @@ lib.makeScope pkgs.newScope (self: with self; {
   launchdBootstrap = pkgs.callPackage ./pkgs/launchd/bootstrap.nix { };
   launchdTest = callPackage ./pkgs/launchd/launchd-test.nix { };
 
+  # open(1) and its default daemon; the protocol is docs/open-protocol.md.
+  open = callPackage ./pkgs/open/open.nix {
+    toolchain = toolchainStage4;
+  };
+  openBootstrap = pkgs.callPackage ./pkgs/open/bootstrap.nix { };
+  openTest = callPackage ./pkgs/open/open-test.nix { };
+
   #### stage 7: the rootfs ####################################################
 
   # Assembled rootfs (early - later stages add inputs here).

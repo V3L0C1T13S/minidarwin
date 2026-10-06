@@ -94,7 +94,9 @@
             installer
             installerBootstrap
             launchd
-            launchdBootstrap;
+            launchdBootstrap
+            open
+            openBootstrap;
 
           # Stage 4 pass-2 members (pass-1 at legacyPackages.<system>.libsystemPass1).
           inherit (scope.libsystemPass2)
@@ -126,7 +128,7 @@
       checks = forAllSystems (system: pkgs:
         let scope = nativeScope pkgs;
         in {
-          inherit (scope) sdkTest runtimesTest libsystemTest libdispatchTest cxxLinkTest libxml2Test libxoTest quickjsTest topTest archTest authTest releaseTest installerTest launchdTest bootDiskTest trustCacheTest dyldDigestsTest runtimeCryptoTest;
+          inherit (scope) sdkTest runtimesTest libsystemTest libdispatchTest cxxLinkTest libxml2Test libxoTest quickjsTest topTest archTest authTest releaseTest installerTest launchdTest openTest bootDiskTest trustCacheTest dyldDigestsTest runtimeCryptoTest;
           dyldTest = (scopeFor pkgs "x86_64").dyld;
           xnuClangTest = scope.xnuClang;
           kernelCryptoTest = scope.kernelCryptoTest;

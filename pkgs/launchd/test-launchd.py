@@ -4,6 +4,8 @@ import os
 import plistlib
 import signal
 import socket
+import stat
+import sys
 import struct
 import subprocess
 import tempfile
@@ -40,8 +42,10 @@ class LaunchdTests(unittest.TestCase):
         self.assertIsNone(self.daemon.poll(), self.logs())
         eventually(lambda: self.request('list')['OK'])
 
+    extra_args = []
+
     def daemon_args(self):
-        return [DAEMON, '--foreground', '--socket', str(self.sock), '--jobs-dir', str(self.jobs)]
+        return [DAEMON, '--foreground', '--socket', str(self.sock), '--jobs-dir', str(self.jobs), *self.extra_args]
 
     def logs(self):
         return (self.root / 'daemon.log').read_text(errors='replace')
@@ -281,10 +285,106 @@ class LaunchdTests(unittest.TestCase):
         self.assertEqual(self.idle('startup')['ExitStatus'], 0)
         self.assertIn('duplicate job label', self.logs())
 
+    def test_socket_activation(self):
+        listener = self.root / 'svc.sock'
+        out = self.root / 'activated'
+        # The job answers one connection on the descriptor launchd names, then exits.
+        server = self.root / 'server.py'
+        server.write_text(f"""import os, socket, sys
+names = dict(e.split('=') for e in os.environ['MINIDARWIN_LAUNCHD_SOCKETS'].split())
+with open({str(out)!r}, 'a') as f: f.write(os.environ['MINIDARWIN_LAUNCHD_SOCKETS'] + chr(10))
+s = socket.socket(fileno=int(names['Listener']))
+c, _ = s.accept()
+c.sendall(c.recv(100).upper())
+""")
+        self.load('activated', [sys.executable, str(server)], ThrottleInterval=1,
+                  Sockets={'Listener': {'SockPathName': str(listener), 'SockPathMode': 0o640,
+                                        'SockType': 'stream', 'SockFamily': 'Unix', 'SockPassive': True}})
+        self.assertTrue(stat.S_ISSOCK(listener.lstat().st_mode))
+        self.assertEqual(listener.stat().st_mode & 0o777, 0o640)
+        time.sleep(0.3)
+        self.assertEqual(self.status('activated')['PID'], 0)
+        self.assertFalse(out.exists())
+        for word in [b'one', b'two']:
+            with socket.socket(socket.AF_UNIX) as client:
+                client.settimeout(6)
+                client.connect(str(listener))
+                client.sendall(word)
+                self.assertEqual(client.recv(100), word.upper())
+            self.idle('activated')
+        self.assertEqual(out.read_text().splitlines(), ['Listener=3', 'Listener=3'])
+        # Stopped jobs are not activated; start re-enables them.
+        self.ctl('stop', 'activated')
+        with socket.socket(socket.AF_UNIX) as client:
+            client.connect(str(listener))
+            client.sendall(b'three')
+            time.sleep(0.5)
+            self.assertEqual(self.status('activated')['PID'], 0)
+            self.ctl('start', 'activated')
+            client.settimeout(6)
+            self.assertEqual(client.recv(100), b'THREE')
+        # Another job cannot claim the same path; unload removes the socket.
+        path = self.root / 'thief.plist'
+        path.write_bytes(plistlib.dumps({'Label': 'thief', 'Program': '/bin/echo',
+                                         'Sockets': {'S': {'SockPathName': str(listener)}}}))
+        response = self.request('load', str(path))
+        self.assertFalse(response['OK'])
+        self.assertIn('already owned by activated', response['Message'])
+        self.ctl('unload', 'activated')
+        eventually(lambda: not listener.exists())
+
+    def test_socket_validation(self):
+        for sockets in [{'bad name': {'SockPathName': '/tmp/x'}}, {'S': {}}, {'S': {'SockPathName': 'relative'}},
+                        {'S': {'SockPathName': str(self.root / 's'), 'SockType': 'dgram'}},
+                        {'S': {'SockPathName': str(self.root / 's'), 'SockPassive': False}},
+                        {'S': {'SockPathName': str(self.root / 's'), 'SockNodeName': 'x'}},
+                        {'S': {'SockPathName': str(self.root / 'jobs')}}]:
+            path = self.root / 'invalid.plist'
+            path.write_bytes(plistlib.dumps({'Label': 'bad', 'Program': '/bin/echo', 'Sockets': sockets}))
+            self.assertFalse(self.request('load', str(path))['OK'], sockets)
+        self.assertTrue((self.root / 'jobs').is_dir())
+
+    def test_overrides_require_a_database(self):
+        result = self.ctl('disable', 'anything', success=False)
+        self.assertIn('no overrides database', result.stderr)
+
     def test_explicit_foreground_required(self):
         result = subprocess.run([DAEMON], capture_output=True, text=True, timeout=3)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('requires PID 1', result.stderr)
+
+
+    def test_disable_enable_and_restart(self):
+        # A private overrides database; `launchctl disable` beats the plist.
+        self.extra_args = ['--overrides', str(self.root / 'disabled.plist')]
+        self.daemon.terminate()
+        self.daemon.wait(timeout=5)
+        out = self.root / 'ran'
+        for label, disabled in [('quiet', False), ('dormant', True)]:
+            (self.jobs / f'{label}.plist').write_bytes(plistlib.dumps({
+                'Label': label, 'Disabled': disabled, 'RunAtLoad': True,
+                'ProgramArguments': ['/bin/sh', '-c', f'echo {label} >> {out}']}))
+        self.daemon = subprocess.Popen(self.daemon_args(), stdout=self.log, stderr=self.log)
+        eventually(lambda: self.sock.exists())
+        eventually(lambda: self.request('list')['OK'])
+        self.assertEqual([j['Label'] for j in self.request('list')['Jobs']], ['quiet'])
+        self.ctl('disable', 'system/quiet')
+        self.ctl('enable', 'dormant')
+        database = plistlib.loads((self.root / 'disabled.plist').read_bytes())
+        self.assertEqual(database, {'quiet': True, 'dormant': False})
+        self.assertEqual((self.root / 'disabled.plist').stat().st_mode & 0o777, 0o644)
+        # Recorded for the next load; the loaded job is untouched.
+        self.assertEqual(len(self.request('list')['Jobs']), 1)
+        self.daemon.terminate()
+        self.daemon.wait(timeout=5)
+        out.unlink()
+        self.daemon = subprocess.Popen(self.daemon_args(), stdout=self.log, stderr=self.log)
+        eventually(lambda: self.sock.exists())
+        eventually(lambda: self.request('list')['OK'])
+        self.assertEqual([j['Label'] for j in self.request('list')['Jobs']], ['dormant'])
+        eventually(lambda: out.exists() and out.read_text() == 'dormant\n')
+        self.assertIn('disabled by override', self.logs())
+        self.ctl('disable', 'not a label', success=False)
 
 
 if __name__ == '__main__':

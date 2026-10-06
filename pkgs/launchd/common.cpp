@@ -62,10 +62,12 @@ std::string text(xmlNode* node) {
   }
   return result;
 }
-Value parse(xmlNode* node, unsigned depth, std::size_t& count) {
+Value parse(xmlNode* node, unsigned depth, std::size_t& count, bool lenient) {
   if (depth > 32 || ++count > 16384) throw Error("plist exceeds structural limits");
   if (node->properties || node->ns || node->nsDef) throw Error("attributes and namespaces are not allowed on plist values");
   if (named(node, "string")) return Value(text(node));
+  // Bundle Info.plists carry these; callers that read them see the text.
+  if (lenient && (named(node, "real") || named(node, "date") || named(node, "data"))) return Value(text(node));
   if (named(node, "integer")) {
     auto value = text(node);
     std::int64_t number;
@@ -80,7 +82,7 @@ Value parse(xmlNode* node, unsigned depth, std::size_t& count) {
   auto children = elements(node);
   if (named(node, "array")) {
     Value::Array result;
-    for (auto* child : children) result.push_back(parse(child, depth + 1, count));
+    for (auto* child : children) result.push_back(parse(child, depth + 1, count, lenient));
     return Value(std::move(result));
   }
   if (named(node, "dict")) {
@@ -89,7 +91,7 @@ Value parse(xmlNode* node, unsigned depth, std::size_t& count) {
     for (std::size_t i = 0; i < children.size(); i += 2) {
       if (!named(children[i], "key") || children[i]->properties) throw Error("expected dictionary key");
       auto key = text(children[i]);
-      if (!result.emplace(key, parse(children[i + 1], depth + 1, count)).second)
+      if (!result.emplace(key, parse(children[i + 1], depth + 1, count, lenient)).second)
         throw Error("duplicate plist key: " + key);
     }
     return Value(std::move(result));
@@ -134,7 +136,7 @@ std::string encode(const Value& value) {
 }
 } // namespace
 
-std::expected<Value, std::string> parsePlist(const std::string& bytes) {
+std::expected<Value, std::string> parsePlist(const std::string& bytes, bool lenient) {
   try {
     if (bytes.empty() || bytes.size() > maxMessage || bytes.find('\0') != std::string::npos)
       throw Error("invalid plist size or embedded NUL");
@@ -156,7 +158,7 @@ std::expected<Value, std::string> parsePlist(const std::string& bytes) {
     auto children = elements(root);
     if (children.size() != 1) throw Error("plist must contain exactly one value");
     std::size_t count = 0;
-    return parse(children[0], 0, count);
+    return parse(children[0], 0, count, lenient);
   } catch (const std::exception& error) { return std::unexpected(std::string(error.what())); }
 }
 std::string writePlist(const Value& value) {

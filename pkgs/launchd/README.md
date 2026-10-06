@@ -2,8 +2,9 @@
 
 An independent C++23 init and process supervisor. Target binaries use MiniDarwin's
 SDK, libc++, libSystem, and libxml2. This is a documented subset of launchd, with
-no Apple launch/bootstrap ABI, Mach service registration, XPC, activation
-sockets, calendars, user login domains, or account name lookup.
+no Apple launch/bootstrap ABI, Mach service registration, XPC, calendars, user
+login domains, or account name lookup. On-demand Unix sockets are supported,
+handed to jobs by descriptor rather than through `launch_activate_socket`.
 
 MiniDarwin does not yet include dyld or boot infrastructure. Installing this
 package adds `/sbin/launchd` and `/bin/launchctl`; it does not make the rootfs
@@ -53,6 +54,7 @@ where described below. Other keys and incorrect types are rejected.
 | `StandardOutPath`, `StandardErrorPath` | Absolute regular-file paths opened for append, created with mode 0600, or exactly `/dev/console`; default /dev/null. Parent directories must already exist. Symlinks and other device/FIFO paths are refused. |
 | `UserID`, `GroupID` | MiniDarwin extensions: numeric UID and GID, supplied together; require root and normal PID 1 mode. The reserved all-ones ID is rejected. |
 | `SupplementaryGroups` | MiniDarwin extension: up to 16 numeric GIDs; requires UserID and GroupID. Groups are cleared when identity is specified without this key. |
+| `Sockets` | Dictionary of 1–16 sockets, each named like a Label and described by a dictionary: `SockPathName` (required, absolute), `SockPathMode` (integer, default 0600), and optionally `SockType` `stream`, `SockFamily` `Unix`, `SockPassive` true. Only listening Unix stream sockets exist. See below. |
 
 Job files are limited to 1 MiB, 32 levels of value nesting, and 16384 values.
 Duplicate dictionary keys, unknown keys, invalid integers, embedded NULs,
@@ -63,6 +65,30 @@ with no PATH search or implicit shell. Use an explicit shell in argv when wanted
 The example plist is installed under `/usr/share/doc/launchd`, outside the active
 job directories. Copy and adjust it deliberately before enabling a service.
 
+## Sockets (on-demand jobs)
+
+launchd creates, binds and listens on a job's sockets when it loads the job,
+replacing a stale socket at the path (never any other file type), and removes
+them when the job is unloaded or launchd exits. Two jobs cannot claim the same
+path. While such a job is idle and enabled, a pending connection on any of its
+sockets starts it, subject to ThrottleInterval; the connection waits in the
+backlog. The job's sockets become descriptors 3, 4, ... in sorted name order,
+named by `MINIDARWIN_LAUNCHD_SOCKETS`, for example `Listener=3`. launchd never
+accepts on them. A job may exit when idle: launchd watches the sockets again
+and relaunches it for the next client. `stop` disables activation until
+`start`. `/usr/libexec/opend` (`pkgs/open`) is the shipped example.
+
+## Overrides
+
+`launchctl disable LABEL` and `launchctl enable LABEL` (a `system/` prefix is
+accepted) record an override in `/private/var/db/minidarwin-launchd/disabled.plist`,
+an XML dictionary of label to boolean, written atomically, mode 0644. As in
+Apple's launchd, an override beats the job's own `Disabled` key, and takes
+effect at the next load: it neither stops nor starts a loaded job. An image can
+ship the file directly (root-owned, not group/world writable) to keep a system
+job from loading, for example to let another job own its socket. Foreground
+mode has no database unless given `--overrides PATH`.
+
 ## Control and lifecycle
 
 ```sh
@@ -71,6 +97,8 @@ launchctl list [label]
 launchctl start label
 launchctl stop label
 launchctl unload label
+launchctl disable label
+launchctl enable label
 ```
 
 Commands return nonzero on errors. Load registers a job; it does not wait for
@@ -109,7 +137,7 @@ The singleton lock inode persists across runs; only the owned socket is removed.
 ## Verification
 
 `nix build .#launchd .#launchdTest` builds target artifacts and runs isolated host
-unit/integration tests. `nix flake check` includes launchdTest. Cross builds never
+unit/integration tests, including socket activation and overrides. `nix flake check` includes launchdTest. Cross builds never
 execute target binaries. Tests cover configuration rejection, descriptor
 ownership, lifecycle transitions, environment/cwd/stdio, rapid exits, restart
 throttling, failed launches, group cleanup, stalled clients, and shutdown. They

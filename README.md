@@ -52,6 +52,7 @@ nix build .#perl                 # Apple's Perl 5.34.1 and its standard library
 nix build .#ncursesTools          # clear, tput, tset/reset, infocmp, tic, toe (stage 6)
 nix build .#su .#sudo            # su, sudo/sudoedit and visudo, with PAM configuration (stage 6)
 nix build .#launchd .#launchdTest   # C++ init/supervisor and isolated host tests
+nix build .#open .#openTest         # /usr/bin/open and its on-demand default daemon, opend
 nix build .#rootfs                 # assembled tree at real paths (/usr/lib/system, etc.)
 nix build .#rootfsRelease          # that tree as a release: tarball, manifest, spec, bundle
 ```
@@ -118,8 +119,19 @@ future Distribution JavaScript support. The rootfs includes the package;
 ### Launchd
 
 The rootfs includes an independent C++ launchd and launchctl for core process supervision.
-See [supported job keys and lifecycle behavior](pkgs/launchd/README.md). No jobs
-are enabled by default; dyld and boot infrastructure are still required to boot it.
+See [supported job keys and lifecycle behavior](pkgs/launchd/README.md). The one
+job the rootfs enables is `org.minidarwin.opend`, which launchd starts on demand
+when a client connects to its socket.
+
+### open
+
+`/usr/bin/open` takes Apple's options and hands a request to whatever daemon
+serves `/private/var/run/org.minidarwin.open.sock`, under the
+[open protocol](docs/open-protocol.md). The default daemon, `/usr/libexec/opend`,
+resolves items through mailcap-style handler tables and `.app` bundles' XML
+`Info.plist` files as the calling user; an environment such as a compatibility
+layer can disable it and serve the same socket instead. See
+[pkgs/open](pkgs/open/README.md).
 
 ### CI
 

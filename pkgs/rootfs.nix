@@ -54,13 +54,14 @@
 , sudo
 , installer
 , launchd
+, open
 , runtimeDyld ? null
 , resolvedAbsences ? [ ]
 , resolvedSymbols ? [ ]
 }:
 
 let
-  cmds = [ shellCmds fileCmds textCmds advCmds basicCmds systemCmds patchCmds miscCmds awk file curl top nano bash darwinPerl zsh ncursesTools su sudo installer quickjs launchd ];
+  cmds = [ shellCmds fileCmds textCmds advCmds basicCmds systemCmds patchCmds miscCmds awk file curl top nano bash darwinPerl zsh ncursesTools su sudo installer quickjs launchd open ];
   members = [ libSystem libsystemTree2 libcxxDylib libcxxabiDylib copyfile removefile ncurses ncursesPanel terminfo certPem libedit libutil libsbuf libmd zlib bzip2 zip icu libxml2 libxo libressl openssl098 ] ++ cmds
     ++ lib.optional (runtimeDyld != null) runtimeDyld;
 
@@ -153,7 +154,7 @@ mkDarwinPackage {
     for f in /bin/df /usr/bin/wc /usr/bin/last /usr/bin/w /usr/bin/uptime /usr/bin/apply; do
       [ -e "$out$f" ] || { echo "rootfs: missing utility $f" >&2; exit 1; }
     done
-    for f in /sbin/launchd /bin/launchctl; do
+    for f in /sbin/launchd /bin/launchctl /usr/bin/open /usr/libexec/opend; do
       [ -x "$out$f" ] || { echo "rootfs: missing launchd file $f" >&2; exit 1; }
     done
     for f in /usr/bin/su /usr/bin/sudo /usr/bin/sudoedit /usr/sbin/visudo \

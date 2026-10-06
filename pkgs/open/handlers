@@ -1,0 +1,24 @@
+# /etc/open/handlers: what open(1) uses when no -a/-b names an application.
+# ~/.config/open/handlers has the same format and is consulted first.
+#
+#   selector[,selector...] ; command words ; flag ; flag ...
+#
+# Selectors (a bare value repeats the previous kind: ext:txt,md):
+#            ext:EXT  type:directory|executable|text|file  scheme:SCHEME
+#            app:NAME (open -a NAME)  bundle:ID (open -b ID)  role:editor (open -t, -f)
+# A command word that is exactly %s becomes the items; otherwise the items
+# are appended after any --args arguments. Words split on blanks; no quoting.
+# needsterminal: run on the caller's terminal; open waits for it to exit.
+# single: one process per item, rather than one for all of them.
+#
+# For an item, the first match wins in this order: ext:, a bundle claiming the
+# extension, type:executable, type:text, type:file. A .app opens itself.
+
+app:TextEdit,role:editor ; /usr/bin/nano -- %s ; needsterminal
+app:Terminal ; /bin/sh ; needsterminal
+
+ext:txt,text,md,markdown,rtf,log,conf,cfg,ini,c,h,cc,cpp,cxx,hh,hpp,m,mm,s,py,pl,pm,rb,sh,bash,zsh,ksh,csh,js,json,xml,plist,html,htm,css,yaml,yml,toml,nix ; /usr/bin/nano -- %s ; needsterminal
+ext:command,tool ; /bin/sh %s ; needsterminal ; single
+type:directory ; /bin/ls -la %s ; needsterminal
+type:executable ; %s ; needsterminal ; single
+type:text ; /usr/bin/nano -- %s ; needsterminal

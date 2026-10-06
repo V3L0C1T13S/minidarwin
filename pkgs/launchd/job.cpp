@@ -6,7 +6,9 @@
 #include <limits>
 #include <set>
 #include <signal.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/un.h>
 #include <unistd.h>
 
 namespace md {
@@ -37,6 +39,33 @@ Fd stdioFile(const std::string& path, bool input) {
   if (flags < 0 || fcntl(fd.get(), F_SETFL, flags & ~O_NONBLOCK) < 0) systemError("fcntl stdio");
   return fd;
 }
+} // namespace
+bool validIdentifier(const std::string& value) {
+  if (value.empty() || value.size() > 255) return false;
+  for (unsigned char c : value)
+    if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-'))
+      return false;
+  return true;
+}
+namespace {
+// Apple's per-socket keys, restricted to what a Unix stream listener needs.
+SocketConfig socketConfig(const std::string& name, const Value& value) {
+  static const std::set<std::string> keys = {"SockPathName", "SockPathMode", "SockType", "SockFamily", "SockPassive"};
+  const auto& dict = value.as<Value::Dict>();
+  for (const auto& [key, unused] : dict) if (!keys.contains(key)) throw Error("unsupported socket key: " + key);
+  SocketConfig result;
+  result.name = name;
+  result.path = absolutePath(required(dict, "SockPathName"));
+  if (result.path.size() >= sizeof(sockaddr_un::sun_path)) throw Error("SockPathName is too long");
+  if (auto it = dict.find("SockPathMode"); it != dict.end()) result.mode = static_cast<mode_t>(integer(it->second, 0777));
+  if (auto it = dict.find("SockType"); it != dict.end() && scalarString(it->second) != "stream")
+    throw Error("only stream sockets are supported");
+  if (auto it = dict.find("SockFamily"); it != dict.end() && scalarString(it->second) != "Unix")
+    throw Error("only Unix sockets are supported");
+  if (auto it = dict.find("SockPassive"); it != dict.end() && !it->second.as<bool>())
+    throw Error("only passive (listening) sockets are supported");
+  return result;
+}
 [[noreturn]] void childFailure(int fd, int error) noexcept {
   const char* bytes = reinterpret_cast<const char*>(&error);
   std::size_t offset = 0;
@@ -55,14 +84,12 @@ std::expected<Config, std::string> parseConfig(const Value& value, bool foregrou
     const auto& dict = value.as<Value::Dict>();
     static const std::set<std::string> keys = {"Label", "Program", "ProgramArguments", "RunAtLoad",
       "KeepAlive", "Disabled", "ThrottleInterval", "ExitTimeOut", "EnvironmentVariables", "WorkingDirectory",
-      "StandardInPath", "StandardOutPath", "StandardErrorPath", "UserID", "GroupID", "SupplementaryGroups"};
+      "StandardInPath", "StandardOutPath", "StandardErrorPath", "UserID", "GroupID", "SupplementaryGroups", "Sockets"};
     for (const auto& [key, unused] : dict) if (!keys.contains(key)) throw Error("unsupported job key: " + key);
     Config config;
     config.label = scalarString(required(dict, "Label"));
     if (config.label.empty() || config.label.size() > 255) throw Error("Label must have 1 to 255 characters");
-    for (unsigned char c : config.label)
-      if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-'))
-        throw Error("Label contains invalid characters");
+    if (!validIdentifier(config.label)) throw Error("Label contains invalid characters");
     if (auto it = dict.find("ProgramArguments"); it != dict.end()) {
       for (const auto& arg : it->second.as<Value::Array>()) config.arguments.push_back(scalarString(arg));
       if (config.arguments.empty() || config.arguments.front().empty()) throw Error("ProgramArguments must be nonempty");
@@ -97,10 +124,47 @@ std::expected<Config, std::string> parseConfig(const Value& value, bool foregrou
         config.groups.push_back(static_cast<gid_t>(integer(item, std::numeric_limits<gid_t>::max() - 1ULL)));
       if (config.groups.size() > 16) throw Error("at most 16 supplementary groups supported");
     }
+    if (auto it = dict.find("Sockets"); it != dict.end()) {
+      const auto& sockets = it->second.as<Value::Dict>();
+      if (sockets.empty() || sockets.size() > 16) throw Error("Sockets must name 1 to 16 sockets");
+      std::set<std::string> paths;
+      for (const auto& [name, item] : sockets) {
+        if (!validIdentifier(name)) throw Error("invalid socket name: " + name);
+        config.sockets.push_back(socketConfig(name, item));
+        if (!paths.insert(config.sockets.back().path).second) throw Error("duplicate SockPathName");
+      }
+    }
     if (foreground && config.uid) throw Error("identity changes are unavailable in foreground mode");
     if (config.uid && geteuid() != 0) throw Error("identity changes require root");
     return config;
   } catch (const std::exception& error) { return std::unexpected(std::string(error.what())); }
+}
+Listener::Listener(const SocketConfig& config) : path_(config.path), name(config.name) {
+  struct stat st{};
+  // A stale socket from an earlier boot is replaced; anything else is not.
+  if (lstat(path_.c_str(), &st) == 0) {
+    if (!S_ISSOCK(st.st_mode)) throw Error("refusing to replace non-socket " + path_);
+    if (unlink(path_.c_str()) < 0) systemError("remove stale socket " + path_);
+  } else if (errno != ENOENT) systemError("stat " + path_);
+  fd = checkedFd(::socket(AF_UNIX, SOCK_STREAM, 0), "socket");
+  closeOnExec(fd.get());
+  sockaddr_un address{}; address.sun_family = AF_UNIX;
+  std::memcpy(address.sun_path, path_.c_str(), path_.size() + 1);
+  if (bind(fd.get(), reinterpret_cast<sockaddr*>(&address), sizeof address) < 0) systemError("bind " + path_);
+  if (lstat(path_.c_str(), &st) < 0) { int saved = errno; (void)unlink(path_.c_str()); errno = saved; systemError("stat " + path_); }
+  device_ = st.st_dev; inode_ = st.st_ino;
+  if (chmod(path_.c_str(), config.mode) < 0 || listen(fd.get(), 128) < 0) {
+    int saved = errno; (void)unlink(path_.c_str()); path_.clear(); errno = saved;
+    systemError("initialize " + config.path);
+  }
+}
+Listener::Listener(Listener&& other) noexcept
+    : path_(std::move(other.path_)), device_(other.device_), inode_(other.inode_),
+      name(std::move(other.name)), fd(std::move(other.fd)) { other.path_.clear(); }
+Listener::~Listener() noexcept {
+  struct stat st{};
+  if (!path_.empty() && lstat(path_.c_str(), &st) == 0 && st.st_dev == device_ && st.st_ino == inode_)
+    (void)unlink(path_.c_str());
 }
 const char* stateName(State state) noexcept {
   switch (state) {
@@ -125,6 +189,18 @@ void spawn(Job& job) {
   arguments.push_back(nullptr);
   auto environment = config.environment;
   environment.try_emplace("PATH", "/usr/bin:/bin:/usr/sbin:/sbin");
+  // Listeners become descriptors 3, 4, ... in the child, named by one variable.
+  const int socketCount = static_cast<int>(job.listeners.size());
+  std::vector<int> sources, staging(job.listeners.size(), -1);
+  if (socketCount) {
+    std::string names;
+    for (int i = 0; i < socketCount; ++i) {
+      const auto& listener = job.listeners[static_cast<std::size_t>(i)];
+      sources.push_back(listener.fd.get());
+      names += (i ? " " : "") + listener.name + "=" + std::to_string(3 + i);
+    }
+    environment[socketsVariable] = names;
+  } else environment.erase(socketsVariable);
   std::vector<std::string> entries;
   for (const auto& [name, item] : environment) entries.push_back(name + "=" + item);
   std::vector<char*> env;
@@ -139,7 +215,7 @@ void spawn(Job& job) {
   pid_t pid = fork();
   if (pid < 0) systemError("fork");
   if (!pid) {
-    const int pipeFd = writer.get();
+    int pipeFd = writer.get();
     // No C++ allocation, exceptions, destructor execution, or library parsing
     // after fork. close-on-exec descriptors prevent unrelated FD inheritance.
     if (setpgid(0, 0) < 0 || sigprocmask(SIG_SETMASK, &empty, nullptr) < 0) childFailure(pipeFd, errno);
@@ -148,10 +224,22 @@ void spawn(Job& job) {
       if (sigaction(signal, &action, nullptr) < 0 && errno != EINVAL) childFailure(pipeFd, errno);
     }
     if (dup2(input.get(), 0) < 0 || dup2(output.get(), 1) < 0 || dup2(error.get(), 2) < 0) childFailure(pipeFd, errno);
+    if (socketCount) {
+      // Move everything clear of 3..3+n first: any source or the error pipe
+      // may already occupy a target slot. dup2 leaves the targets inheritable.
+      int moved = fcntl(pipeFd, F_DUPFD_CLOEXEC, 3 + socketCount);
+      if (moved < 0) childFailure(pipeFd, errno);
+      pipeFd = moved;
+      for (int i = 0; i < socketCount; ++i)
+        if ((staging[static_cast<std::size_t>(i)] = fcntl(sources[static_cast<std::size_t>(i)], F_DUPFD_CLOEXEC, 3 + socketCount)) < 0)
+          childFailure(pipeFd, errno);
+      for (int i = 0; i < socketCount; ++i)
+        if (dup2(staging[static_cast<std::size_t>(i)], 3 + i) < 0) childFailure(pipeFd, errno);
+    }
     if (!config.directory.empty() && chdir(config.directory.c_str()) < 0) childFailure(pipeFd, errno);
     if (config.uid && (setgroups(static_cast<int>(config.groups.size()), config.groups.data()) < 0 ||
                        setgid(*config.gid) < 0 || setuid(*config.uid) < 0)) childFailure(pipeFd, errno);
-    for (int fd = 3; fd < descriptorLimit; ++fd) if (fd != pipeFd) (void)close(fd);
+    for (int fd = 3 + socketCount; fd < descriptorLimit; ++fd) if (fd != pipeFd) (void)close(fd);
     execve(config.program.c_str(), arguments.data(), env.data());
     childFailure(pipeFd, errno);
   }

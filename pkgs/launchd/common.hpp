@@ -47,7 +47,8 @@ struct Value {
     return *value;
   }
 };
-std::expected<Value, std::string> parsePlist(const std::string& bytes);
+// lenient also accepts <real>, <date> and <data>, as their text.
+std::expected<Value, std::string> parsePlist(const std::string& bytes, bool lenient = false);
 std::string writePlist(const Value& value);
 std::string readFile(const std::string& path, bool trusted);
 std::string frame(const Value& value);
@@ -57,4 +58,7 @@ std::string stringField(const Value::Dict& dict, const std::string& key);
 Value reply(bool ok, const std::string& message, Value::Array jobs = {});
 
 constexpr const char* defaultSocket = "/private/var/run/minidarwin-launchd/control.sock";
+constexpr const char* defaultOverrides = "/private/var/db/minidarwin-launchd/disabled.plist";
+// Activated jobs find their listening sockets here: "Name=3 Other=4".
+constexpr const char* socketsVariable = "MINIDARWIN_LAUNCHD_SOCKETS";
 } // namespace md

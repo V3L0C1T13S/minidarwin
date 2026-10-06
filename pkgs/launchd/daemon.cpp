@@ -24,17 +24,26 @@ void log(const std::string& message) { std::cerr << "minidarwin launchd: " << me
 struct Options {
   bool foreground = false;
   std::string socket = defaultSocket;
+  std::string overrides = defaultOverrides;
   std::vector<std::string> directories;
 };
 Options options(int argc, char** argv) {
   Options result;
-  bool socketSet = false;
+  bool socketSet = false, overridesSet = false;
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
     if (arg == "--foreground") result.foreground = true;
     else if (arg == "--socket" && i + 1 < argc) { result.socket = argv[++i]; socketSet = true; }
     else if (arg == "--jobs-dir" && i + 1 < argc) result.directories.emplace_back(argv[++i]);
-    else throw Error("usage: launchd [--foreground --socket PATH --jobs-dir PATH ...]");
+    else if (arg == "--overrides" && i + 1 < argc) { result.overrides = argv[++i]; overridesSet = true; }
+    else throw Error("usage: launchd [--foreground --socket PATH --jobs-dir PATH ... [--overrides PATH]]");
+  }
+  if (overridesSet && !result.foreground) throw Error("custom paths require foreground mode");
+  if (result.foreground) {
+    // Without --overrides a development instance has no database at all.
+    if (!overridesSet) result.overrides.clear();
+    else if (result.overrides.empty() || result.overrides.front() != '/') throw Error("overrides path must be absolute");
+    else if (result.overrides == defaultOverrides) throw Error("foreground mode requires a private overrides path");
   }
   if (result.foreground) {
     if (!socketSet || result.directories.empty()) throw Error("foreground mode requires --socket and --jobs-dir");
@@ -127,6 +136,8 @@ class Supervisor {
   Fd queue_;
   std::map<std::string, Job> jobs_;
   std::map<int, Client> clients_;
+  // Label -> disabled, as `launchctl enable/disable` last recorded it.
+  std::map<std::string, bool> overrides_;
   bool shuttingDown_ = false;
   uintptr_t nextClient_ = 1;
 
@@ -153,12 +164,62 @@ class Supervisor {
     if (!value) throw Error(value.error());
     auto config = parseConfig(*value, options_.foreground);
     if (!config) throw Error(config.error());
-    if (config->disabled) throw Error("job is Disabled");
+    // As in Apple's launchd, a recorded override beats the plist's Disabled.
+    bool disabled = config->disabled;
+    if (auto it = overrides_.find(config->label); it != overrides_.end()) disabled = it->second;
+    if (disabled) throw Error(config->disabled && !overrides_.contains(config->label) ? "job is Disabled" : "job is disabled by override");
     if (jobs_.contains(config->label)) throw Error("duplicate job label: " + config->label);
+    for (const auto& socket : config->sockets)
+      for (const auto& [other, job] : jobs_)
+        for (const auto& existing : job.config.sockets)
+          if (existing.path == socket.path) throw Error("socket " + socket.path + " is already owned by " + other);
     std::string label = config->label;
     Job job(std::move(*config));
+    for (const auto& socket : job.config.sockets) job.listeners.emplace_back(socket);
     if (job.config.runAtLoad || job.config.keepAlive) job.state = State::waiting;
     jobs_.emplace(std::move(label), std::move(job));
+  }
+  void readOverrides() {
+    if (options_.overrides.empty()) return;
+    struct stat st{};
+    if (lstat(options_.overrides.c_str(), &st) < 0 && errno == ENOENT) return;
+    try {
+      auto value = parsePlist(readFile(options_.overrides, !options_.foreground));
+      if (!value) throw Error(value.error());
+      for (const auto& [label, item] : value->as<Value::Dict>()) overrides_[label] = item.as<bool>();
+    } catch (const std::exception& error) { overrides_.clear(); log(options_.overrides + ": " + error.what()); }
+  }
+  void setOverride(std::string label, bool disabled) {
+    if (options_.overrides.empty()) throw Error("this launchd has no overrides database");
+    if (label.starts_with("system/")) label.erase(0, 7);
+    if (!validIdentifier(label)) throw Error("invalid label");
+    auto updated = overrides_;
+    updated[label] = disabled;
+    Value::Dict dict;
+    for (const auto& [name, value] : updated) dict.emplace(name, Value(value));
+    auto bytes = writePlist(Value(std::move(dict)));
+    auto directory = options_.overrides.substr(0, options_.overrides.find_last_of('/'));
+    if (!options_.foreground && mkdir(directory.c_str(), 0755) < 0 && errno != EEXIST) systemError("mkdir " + directory);
+    // Write a sibling, then rename over the database: readers see old or new.
+    auto temporary = options_.overrides + ".new";
+    (void)unlink(temporary.c_str());
+    {
+      auto fd = checkedFd(open(temporary.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0644), "create " + temporary);
+      if (fchmod(fd.get(), 0644) < 0) systemError("chmod " + temporary);
+      std::size_t offset = 0;
+      while (offset < bytes.size()) {
+        auto count = write(fd.get(), bytes.data() + offset, bytes.size() - offset);
+        if (count < 0) { if (errno == EINTR) continue; systemError("write " + temporary); }
+        offset += static_cast<std::size_t>(count);
+      }
+      if (fsync(fd.get()) < 0) systemError("fsync " + temporary);
+    }
+    if (rename(temporary.c_str(), options_.overrides.c_str()) < 0) systemError("rename " + temporary);
+    overrides_ = std::move(updated);
+  }
+  // On-demand jobs: idle, enabled, and owning listeners waiting for a client.
+  static bool activatable(const Job& job) {
+    return !job.listeners.empty() && !job.pid && job.state == State::idle && job.enabled && !job.remove;
   }
   void loadDirectories() {
     for (const auto& path : options_.directories) {
@@ -204,6 +265,9 @@ class Supervisor {
       if (shuttingDown_) throw Error("launchd is shutting down");
       if (argument.empty()) throw Error("command requires an argument");
       if (command == "load") { load(argument); return reply(true, "loaded"); }
+      // Recorded for the next load; neither affects a job already loaded.
+      if (command == "disable") { setOverride(argument, true); return reply(true, "disabled"); }
+      if (command == "enable") { setOverride(argument, false); return reply(true, "enabled"); }
       auto it = jobs_.find(argument);
       if (it == jobs_.end()) throw Error("unknown job label");
       if (command == "start") start(it->second);
@@ -327,6 +391,7 @@ public:
       EV_SET(&change, static_cast<uintptr_t>(signal), EVFILT_SIGNAL, EV_ADD, 0, 0, nullptr);
       if (kevent(queue_.get(), &change, 1, nullptr, 0, nullptr) < 0) systemError("register signal");
     }
+    readOverrides();
     loadDirectories();
   }
   void run() {
@@ -337,6 +402,9 @@ public:
         if (!alive) return;
       }
       watch(endpoint_.socket.get(), EVFILT_READ);
+      for (const auto& [label, job] : jobs_)
+        if (activatable(job) && !shuttingDown_)
+          for (const auto& listener : job.listeners) watch(listener.fd.get(), EVFILT_READ);
       for (auto it = clients_.begin(); it != clients_.end();) {
         if (Clock::now() >= it->second.deadline) { it = clients_.erase(it); continue; }
         watch(it->first, it->second.output.empty() ? EVFILT_READ : EVFILT_WRITE, it->second.generation);
@@ -361,6 +429,16 @@ public:
         if (event.filter == EVFILT_SIGNAL) continue;
         int fd = static_cast<int>(event.ident);
         if (fd == endpoint_.socket.get()) { acceptClients(); continue; }
+        // A pending connection on an idle job's listener launches the job; the
+        // connection stays queued for it. Stale events on a running job are ignored.
+        bool activation = false;
+        for (auto& [label, job] : jobs_)
+          for (const auto& listener : job.listeners)
+            if (listener.fd.get() == fd) {
+              activation = true;
+              if (activatable(job) && !shuttingDown_) job.state = State::waiting;
+            }
+        if (activation) continue;
         auto it = clients_.find(fd);
         // A closed descriptor can be reused while older events remain in this
         // returned batch. Only the matching connection generation may consume it.
