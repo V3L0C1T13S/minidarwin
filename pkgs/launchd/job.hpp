@@ -46,7 +46,9 @@ struct Job {
   State state = State::idle;
   pid_t pid = 0;
   bool enabled = true, remove = false, attempted = false;
-  Clock::time_point lastAttempt{}, stopDeadline{};
+  // killed: the group was sent SIGKILL at killDeadline - LAUNCHD_SIGKILL_TIMER.
+  bool killed = false;
+  Clock::time_point lastAttempt{}, stopDeadline{}, killDeadline{};
   std::optional<int> exitStatus, exitSignal;
   std::string launchError;
   Fd execError;

@@ -5,13 +5,17 @@
 #include <cerrno>
 #include <cstring>
 #include <cstdlib>
+#include <ctime>
 #include <dirent.h>
 #include <fcntl.h>
 #include <iostream>
+#include <libproc.h>
 #include <memory>
 #include <signal.h>
 #include <sys/event.h>
 #include <sys/file.h>
+#include <sys/proc.h>
+#include <sys/reboot.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
@@ -139,6 +143,9 @@ class Supervisor {
   // Label -> disabled, as `launchctl enable/disable` last recorded it.
   std::map<std::string, bool> overrides_;
   bool shuttingDown_ = false;
+  std::time_t shutdownWall_ = 0;
+  Clock::time_point stillAlive_{};
+  int rebootFlags_ = RB_AUTOBOOT;
   uintptr_t nextClient_ = 1;
 
   void watch(int fd, short filter, uintptr_t generation = 0) {
@@ -146,13 +153,41 @@ class Supervisor {
     EV_SET(&change, static_cast<uintptr_t>(fd), filter, EV_ADD | EV_ONESHOT, 0, 0, reinterpret_cast<void*>(generation));
     if (kevent(queue_.get(), &change, 1, nullptr, 0, nullptr) < 0) systemError("kevent register");
   }
+  // job_stop: SIGTERM once, then SIGKILL after ExitTimeOut. As in Apple's
+  // launchd, an ExitTimeOut of zero is infinite: the job is never escalated.
   void stop(Job& job) {
     job.enabled = false;
     if (!job.pid) { job.state = State::idle; return; }
     if (job.state == State::stopping) return;
     job.state = State::stopping;
-    job.stopDeadline = Clock::now() + std::chrono::seconds(job.config.exitTimeout);
+    job.stopDeadline = job.config.exitTimeout ? Clock::now() + std::chrono::seconds(job.config.exitTimeout)
+                                              : Clock::time_point::max();
+    if (!job.config.exitTimeout) log(job.config.label + ": this job has an infinite exit timeout");
     if (kill(-job.pid, SIGTERM) < 0 && errno != ESRCH) log("SIGTERM " + job.config.label + ": " + std::strerror(errno));
+  }
+  // job_kill, and the exit_timeout timer that follows it: a group still alive
+  // LAUNCHD_SIGKILL_TIMER seconds after SIGKILL is treated as exited, so that
+  // one wedged process cannot hold shutdown (or a restart) forever. Its zombie
+  // is reaped as an unmanaged child whenever it finally dies.
+  static constexpr auto sigkillTimer = std::chrono::seconds(4);
+  void escalate(Job& job, Clock::time_point now) {
+    if (job.state != State::stopping) return;
+    if (!job.killed && now >= job.stopDeadline) {
+      log(job.config.label + ": exit timeout elapsed (" + std::to_string(job.config.exitTimeout) + " seconds); killing");
+      if (kill(-job.pid, SIGKILL) < 0 && errno != ESRCH) log("SIGKILL failed: " + job.config.label);
+      job.killed = true; job.killDeadline = now + sigkillTimer;
+    } else if (job.killed && now >= job.killDeadline) {
+      log(job.config.label + ": has not died after being killed " + std::to_string(sigkillTimer.count()) +
+          " seconds ago; simulating exit");
+      exited(job);
+      job.launchError = "simulated exit: PID did not die after SIGKILL";
+    }
+  }
+  // The bookkeeping half of job_reap/job_dispatch, shared with simulated exit.
+  void exited(Job& job) {
+    job.pid = 0; job.killed = false; job.execError.reset();
+    job.exitStatus.reset(); job.exitSignal.reset();
+    job.state = job.enabled && job.config.keepAlive && !shuttingDown_ ? State::waiting : State::idle;
   }
   void start(Job& job) {
     if (job.remove || job.state == State::stopping) throw Error("job is stopping");
@@ -217,6 +252,82 @@ class Supervisor {
     if (rename(temporary.c_str(), options_.overrides.c_str()) < 0) systemError("rename " + temporary);
     overrides_ = std::move(updated);
   }
+  // Termination follows Apple's launchd (launchd_shutdown, jobmgr_shutdown,
+  // jobmgr_do_garbage_collection and jobmgr_remove in core.c), less the Mach,
+  // shutdown-monitor and dirty-at-shutdown machinery this launchd does not have.
+  static std::string date(std::time_t when) {
+    std::tm parts{};
+    char text[32];
+    if (!localtime_r(&when, &parts) || !std::strftime(text, sizeof text, "%a %b %e %H:%M:%S %Y", &parts)) return "?";
+    return text;
+  }
+  static constexpr auto stillAliveInterval = std::chrono::seconds(5);
+  // launchd_shutdown. Idempotent, but a later reboot request still sets the
+  // flags used at the end, as reboot2() does.
+  void shutdown() {
+    if (shuttingDown_) return;
+    shuttingDown_ = true;
+    log(options_.foreground ? "launchd termination began" : "system shutdown began");
+    shutdownWall_ = std::time(nullptr);
+    log("userspace shutdown begun at: " + date(shutdownWall_));
+    stillAlive_ = Clock::now() + stillAliveInterval;
+    (void)collectGarbage();
+  }
+  // jobmgr_do_garbage_collection: a job with no process is removed outright,
+  // which closes and unlinks its sockets; every other job is stopped. Run
+  // after each reap while shutting down. True once no job is left.
+  bool collectGarbage() {
+    for (auto it = jobs_.begin(); it != jobs_.end();) {
+      if (!it->second.pid) { it = jobs_.erase(it); continue; }
+      stop(it->second);
+      ++it;
+    }
+    return jobs_.empty();
+  }
+  // jobmgr_still_alive_with_check, on its 5-second timer.
+  void reportStillAlive(Clock::time_point now) {
+    if (now < stillAlive_) return;
+    stillAlive_ = now + stillAliveInterval;
+    log("still alive with " + std::to_string(jobs_.size()) + " children");
+    for (const auto& [label, job] : jobs_)
+      log(label + ": PID " + std::to_string(job.pid) + " is still valid (sent SIGTERM" + (job.killed ? " and SIGKILL)" : ")"));
+  }
+  // jobmgr_kill_stray_children: whatever is left belongs to no job. Each gets
+  // SIGTERM without waiting, since SIGKILLing helpers that back kernel state
+  // can lose data (rdar://problem/6562592). Our own zombies are reaped.
+  void terminateStrays() {
+    int count = proc_listallpids(nullptr, 0);
+    if (count <= 0) { log("cannot list processes: " + std::string(std::strerror(errno))); return; }
+    std::vector<pid_t> pids(static_cast<std::size_t>(count) + 64);
+    count = proc_listallpids(pids.data(), static_cast<int>(pids.size() * sizeof(pid_t)));
+    if (count <= 0) { log("cannot list processes: " + std::string(std::strerror(errno))); return; }
+    for (int i = 0; i < count && i < static_cast<int>(pids.size()); ++i) {
+      pid_t pid = pids[static_cast<std::size_t>(i)];
+      if (pid <= 1 || pid == getpid()) continue;
+      proc_bsdshortinfo info{};
+      if (proc_pidinfo(pid, PROC_PIDT_SHORTBSDINFO, 1, &info, PROC_PIDT_SHORTBSDINFO_SIZE) <= 0) continue;
+      bool zombie = info.pbsi_status == SZOMB;
+      log(std::string("stray ") + (zombie ? "zombie " : "") + "process at shutdown: PID " + std::to_string(pid) +
+          " PPID " + std::to_string(info.pbsi_ppid) + " PGID " + std::to_string(info.pbsi_pgid) + " " +
+          std::string(info.pbsi_comm, strnlen(info.pbsi_comm, sizeof info.pbsi_comm)));
+      if (zombie && static_cast<pid_t>(info.pbsi_ppid) == getpid()) { (void)waitpid(pid, nullptr, WNOHANG); continue; }
+      log("sending SIGTERM to PID " + std::to_string(pid) + " and continuing");
+      if (kill(pid, SIGTERM) < 0 && errno != ESRCH) log("SIGTERM " + std::to_string(pid) + ": " + std::strerror(errno));
+    }
+  }
+  // jobmgr_remove for the root manager. A development instance exits; PID 1
+  // terminates the strays and calls reboot(2). Returning means it failed.
+  void finishShutdown() {
+    auto now = std::time(nullptr);
+    auto delta = now - shutdownWall_;
+    log("userspace shutdown finished at: " + date(now));
+    log("userspace shutdown took approximately " + std::to_string(delta) + " second" + (delta != 1 ? "s" : ""));
+    if (options_.foreground) return;
+    terminateStrays();
+    log(std::string("about to call: reboot(") + (rebootFlags_ & RB_HALT ? "RB_HALT" : "RB_AUTOBOOT") + ")");
+    std::cerr.flush();
+    if (reboot(rebootFlags_) < 0) log("reboot failed: " + std::string(std::strerror(errno)));
+  }
   // On-demand jobs: idle, enabled, and owning listeners waiting for a client.
   static bool activatable(const Job& job) {
     return !job.listeners.empty() && !job.pid && job.state == State::idle && job.enabled && !job.remove;
@@ -261,6 +372,14 @@ class Supervisor {
           result.push_back(jobStatus(it->second));
         } else for (const auto& [label, job] : jobs_) result.push_back(jobStatus(job));
         return reply(true, "", std::move(result));
+      }
+      // reboot2(): record how to end, then begin (or continue) shutdown.
+      if (command == "reboot") {
+        if (argument == "halt") rebootFlags_ = RB_HALT;
+        else if (argument == "system") rebootFlags_ = RB_AUTOBOOT;
+        else throw Error("reboot takes system or halt");
+        shutdown();
+        return reply(true, "shutting down");
       }
       if (shuttingDown_) throw Error("launchd is shutting down");
       if (argument.empty()) throw Error("command requires an argument");
@@ -346,11 +465,9 @@ class Supervisor {
       do { result = waitpid(info.si_pid, &status, WNOHANG); } while (result < 0 && errno == EINTR);
       if (result != info.si_pid) { if (result < 0) systemError("waitpid"); return; }
       if (managed) {
-        managed->pid = 0; managed->execError.reset();
-        managed->exitStatus.reset(); managed->exitSignal.reset();
+        exited(*managed);
         if (WIFEXITED(status)) managed->exitStatus = WEXITSTATUS(status);
         if (WIFSIGNALED(status)) managed->exitSignal = WTERMSIG(status);
-        managed->state = managed->enabled && managed->config.keepAlive && !shuttingDown_ ? State::waiting : State::idle;
       }
     }
   }
@@ -362,10 +479,7 @@ class Supervisor {
       if (job.remove && !job.pid) { it = jobs_.erase(it); continue; }
       if (job.pid) {
         drainExecError(job);
-        if (job.state == State::stopping && now >= job.stopDeadline) {
-          if (kill(-job.pid, SIGKILL) < 0 && errno != ESRCH) log("SIGKILL failed: " + job.config.label);
-          job.stopDeadline = Clock::time_point::max();
-        }
+        escalate(job, now);
       } else if (job.state == State::waiting && !shuttingDown_ &&
                  (!job.attempted || now >= job.lastAttempt + std::chrono::seconds(job.config.throttle))) {
         try { spawn(job); }
@@ -394,12 +508,14 @@ public:
     readOverrides();
     loadDirectories();
   }
+  // Returns once shutdown is complete: a development instance then exits, and
+  // PID 1 only gets here if reboot(2) failed.
   void run() {
     for (;;) {
       tick();
-      if (shuttingDown_ && options_.foreground) {
-        bool alive = std::any_of(jobs_.begin(), jobs_.end(), [](const auto& entry) { return entry.second.pid != 0; });
-        if (!alive) return;
+      if (shuttingDown_) {
+        if (collectGarbage()) { finishShutdown(); return; }
+        reportStillAlive(Clock::now());
       }
       watch(endpoint_.socket.get(), EVFILT_READ);
       for (const auto& [label, job] : jobs_)
@@ -416,13 +532,12 @@ public:
       timespec timeout{0, 100000000};
       int count = kevent(queue_.get(), nullptr, 0, events.data(), static_cast<int>(events.size()), &timeout);
       if (count < 0) { if (errno == EINTR) continue; systemError("kevent wait"); }
-      // Process shutdown signals before accepting any new commands.
+      // Process shutdown signals before accepting any new commands. Apple's
+      // launchd ignores SIGINT; only a development instance treats it as SIGTERM.
       for (int i = 0; i < count; ++i) {
         const auto& event = events[static_cast<std::size_t>(i)];
-        if (event.filter == EVFILT_SIGNAL && (event.ident == SIGTERM || event.ident == SIGINT)) {
-          shuttingDown_ = true;
-          for (auto& [label, job] : jobs_) stop(job);
-        }
+        if (event.filter == EVFILT_SIGNAL && (event.ident == SIGTERM || (event.ident == SIGINT && options_.foreground)))
+          shutdown();
       }
       for (int i = 0; i < count; ++i) {
         const auto& event = events[static_cast<std::size_t>(i)];
@@ -464,6 +579,14 @@ public:
 } // namespace
 } // namespace md
 
+// PID 1 must never exit. Retain child reaping; recovery belongs to later work.
+[[noreturn]] static void reapForever() {
+  for (;;) {
+    while (waitpid(-1, nullptr, WNOHANG) > 0) {}
+    timespec delay{1, 0}; nanosleep(&delay, nullptr);
+  }
+}
+
 int main(int argc, char** argv) {
   // Ensure internally allocated descriptors can never occupy stdio slots.
   // PID 1 starts with none; give it the console so its diagnostics are seen.
@@ -478,15 +601,11 @@ int main(int argc, char** argv) {
     md::Supervisor supervisor(md::options(argc, argv));
     try { supervisor.run(); }
     catch (...) { supervisor.emergencyStop(); throw; }
-    return 0;
   } catch (const std::exception& error) {
     std::cerr << "minidarwin launchd: " << error.what() << '\n';
     if (getpid() != 1) return 1;
-    // PID 1 must never exit, even if startup fails. Retain child reaping while
-    // reporting the original failure; real boot/recovery belongs to later work.
-    for (;;) {
-      while (waitpid(-1, nullptr, WNOHANG) > 0) {}
-      timespec delay{1, 0}; nanosleep(&delay, nullptr);
-    }
   }
+  // Reached by PID 1 only after a failed startup or a failed reboot(2).
+  if (getpid() == 1) reapForever();
+  return 0;
 }

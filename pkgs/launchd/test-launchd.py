@@ -273,6 +273,53 @@ class LaunchdTests(unittest.TestCase):
         self.assertFalse(self.sock.exists())
         self.assertTrue(Path(str(self.sock) + '.lock').exists())
 
+    def test_shutdown_removes_inactive_jobs_and_reports_stragglers(self):
+        listener = self.root / 'idle.sock'
+        self.load('idle', ['/bin/sh', '-c', 'exit 0'], Sockets={'Listener': {'SockPathName': str(listener)}})
+        self.load('straggler', ['/bin/sh', '-c', 'trap "" TERM; while :; do sleep 1; done'], RunAtLoad=True,
+                  KeepAlive=True, ExitTimeOut=6)
+        eventually(lambda: self.status('straggler')['State'] == 'running')
+        self.assertTrue(listener.exists())
+        self.daemon.terminate()
+        # An inactive job is removed at once, sockets and all, while an active
+        # one is still being stopped; nothing is restarted or loaded meanwhile.
+        eventually(lambda: not listener.exists())
+        self.assertIsNone(self.daemon.poll())
+        jobs = self.request('list')['Jobs']
+        self.assertEqual([(job['Label'], job['State']) for job in jobs], [('straggler', 'stopping')])
+        refused = self.request('load', str(self.root / 'idle.plist'))
+        self.assertFalse(refused['OK'])
+        self.assertIn('shutting down', refused['Message'])
+        eventually(lambda: 'still alive with 1 children' in self.logs(), timeout=7)
+        self.daemon.wait(timeout=6)
+        self.assertEqual(self.daemon.returncode, 0, self.logs())
+        logs = self.logs()
+        for line in ['launchd termination began', 'userspace shutdown begun at', 'straggler: exit timeout elapsed (6 seconds)',
+                     'userspace shutdown finished at', 'userspace shutdown took approximately']:
+            self.assertIn(line, logs)
+
+    def test_reboot_request(self):
+        self.ctl('reboot', 'sideways', success=False)
+        self.assertIsNone(self.daemon.poll())
+        self.load('job', ['/bin/sh', '-c', 'sleep 30'], RunAtLoad=True)
+        eventually(lambda: self.status('job')['State'] == 'running')
+        self.assertIn('shutting down', self.ctl('reboot').stdout)
+        self.daemon.wait(timeout=4)
+        self.assertEqual(self.daemon.returncode, 0, self.logs())
+        # A development instance exits; only PID 1 calls reboot(2).
+        self.assertNotIn('about to call: reboot', self.logs())
+
+    def test_zero_exit_timeout_is_infinite(self):
+        self.load('patient', ['/bin/sh', '-c', 'trap "" TERM; while :; do sleep 1; done'], RunAtLoad=True, ExitTimeOut=0)
+        pid = eventually(lambda: (s['PID'] if (s := self.status('patient'))['State'] == 'running' else None))
+        self.ctl('stop', 'patient')
+        time.sleep(1.5)
+        status = self.status('patient')
+        self.assertEqual((status['State'], status['PID']), ('stopping', pid))
+        self.assertIn('infinite exit timeout', self.logs())
+        os.killpg(pid, signal.SIGKILL)
+        self.assertEqual(self.idle('patient')['ExitSignal'], signal.SIGKILL)
+
     def test_sorted_startup_load_and_rejection(self):
         self.daemon.terminate()
         self.daemon.wait(timeout=3)

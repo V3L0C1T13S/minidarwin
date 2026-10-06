@@ -46,11 +46,13 @@ int main(int argc, char** argv) {
       if (++i >= argc) throw Error("--socket requires a path");
       path = argv[i++];
     }
-    if (i >= argc) throw Error("usage: launchctl [--socket PATH] load|unload|list|start|stop|enable|disable [ARGUMENT]");
+    if (i >= argc) throw Error("usage: launchctl [--socket PATH] load|unload|list|start|stop|enable|disable|reboot [ARGUMENT]");
     std::string command = argv[i++], argument;
     if (i < argc) argument = argv[i++];
+    // `reboot` alone is Apple's `reboot system`.
+    if (command == "reboot" && argument.empty()) argument = "system";
     if (i != argc || (command != "list" && command != "load" && command != "unload" && command != "start" && command != "stop" &&
-         command != "enable" && command != "disable") ||
+         command != "enable" && command != "disable" && command != "reboot") ||
         (command != "list" && argument.empty())) throw Error("invalid command or argument count");
     if (path.empty() || path.front() != '/' || path.size() >= sizeof(sockaddr_un::sun_path)) throw Error("invalid socket path");
     if (command == "load") {

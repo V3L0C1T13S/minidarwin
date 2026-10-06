@@ -47,7 +47,7 @@ where described below. Other keys and incorrect types are rejected.
 | `KeepAlive` | Boolean, default false. Start immediately and restart after any exit or launch failure. Dictionary conditions are unsupported. |
 | `Disabled` | Boolean, default false. True prevents loading; there is no persistent override database. |
 | `ThrottleInterval` | Integer seconds, default 10, maximum 86400. Minimum time between attempts, including manual starts; zero is clamped to 1 to prevent crash loops. |
-| `ExitTimeOut` | Integer seconds, default 20, range 0–86400. Grace period before SIGKILL; zero means immediate escalation. |
+| `ExitTimeOut` | Integer seconds, default 20, range 0–86400. Grace period between SIGTERM and SIGKILL. As in Apple's launchd, zero means infinite: the job is never killed, and can stall shutdown forever. |
 | `EnvironmentVariables` | Dictionary of strings. Base environment contains only PATH=/usr/bin:/bin:/usr/sbin:/sbin, then job overrides. Parent environment is not inherited. |
 | `WorkingDirectory` | Absolute path; otherwise inherits the daemon's working directory. |
 | `StandardInPath` | Absolute regular-file path; default /dev/null. |
@@ -99,6 +99,7 @@ launchctl stop label
 launchctl unload label
 launchctl disable label
 launchctl enable label
+launchctl reboot [system|halt]
 ```
 
 Commands return nonzero on errors. Load registers a job; it does not wait for
@@ -113,18 +114,30 @@ completes. Manual starts respect throttling. States are idle, waiting,
 launching, running, and stopping.
 
 Each job runs in its own process group. Stop sends SIGTERM, followed by SIGKILL
-after ExitTimeOut. Leader exit also triggers group cleanup before reaping and
+after ExitTimeOut. A group still alive 4 seconds after SIGKILL (a process wedged
+in the kernel) is treated as exited, as Apple's launchd does: the job's
+LaunchError says so, and the process is reaped whenever it finally dies. Leader exit also triggers group cleanup before reaping and
 restarting. A daemon must remain in the foreground; descendants deliberately
 leaving its process group cannot be contained by this version. Setup or exec
 failure prevents the requested program from executing and is reported through
 a close-on-exec error pipe. Stdio files are opened by the supervisor before
 credential dropping; use trusted output directories and deliberate file ownership.
 
-SIGTERM/SIGINT disable restarts and stop all managed jobs. Foreground mode exits
-after cleanup; PID 1 remains alive, serving status and reaping children. It does
-not reboot or power off. SIGHUP is consumed without reloading; load/unload are
-explicit. Fatal PID 1 initialization errors are logged, then a minimal child
-reaper stays alive; recovery and boot policy are future work.
+Termination follows Apple's launchd (`launchd_shutdown`, `jobmgr_shutdown` and
+`jobmgr_do_garbage_collection` in its `core.c`). SIGTERM, or `launchctl reboot`,
+begins shutdown, once: nothing is started, restarted, activated or loaded after
+it, and only `list` and `reboot` are still served. Each job without a process
+is removed at once, closing and unlinking its sockets; each one with a process
+is stopped as above and removed when it exits. Every 5 seconds launchd logs
+which jobs are still alive. When none are left, a development instance exits 0.
+PID 1 sends SIGTERM to every remaining process (strays outside any job), without
+waiting for them, then calls `reboot(2)`: `RB_AUTOBOOT`, or `RB_HALT` after
+`launchctl reboot halt`. If that fails it logs the error and stays alive as a
+reaper. The shutdown monitor and dirty-at-shutdown jobs have no equivalent here.
+PID 1 ignores SIGINT, as Apple's launchd does; a foreground instance treats it
+as SIGTERM. SIGHUP is consumed without reloading; load/unload are explicit.
+Fatal PID 1 initialization errors are logged, then a minimal child reaper stays
+alive; recovery and boot policy are future work.
 
 The control socket is `/private/var/run/minidarwin-launchd/control.sock`, mode
 0600, authenticated to the daemon's UID using peer credentials. Requests and
@@ -140,7 +153,9 @@ The singleton lock inode persists across runs; only the owned socket is removed.
 unit/integration tests, including socket activation and overrides. `nix flake check` includes launchdTest. Cross builds never
 execute target binaries. Tests cover configuration rejection, descriptor
 ownership, lifecycle transitions, environment/cwd/stdio, rapid exits, restart
-throttling, failed launches, group cleanup, stalled clients, and shutdown. They
+throttling, failed launches, group cleanup, stalled clients, shutdown ordering,
+reboot requests and infinite exit timeouts. The simulated exit after an
+unkillable SIGKILL, and PID 1's stray termination and reboot, are not exercised. They
 never contact macOS launchd. Runtime tests use host libSystem. Unit probes test credential dropping when
 run as root and otherwise report a skip; foreground identity rejection is always
 covered. Actual PID 1 and target-runtime validation require a future bootable

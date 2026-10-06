@@ -244,7 +244,7 @@ void spawn(Job& job) {
     childFailure(pipeFd, errno);
   }
   // Everything after fork is nonthrowing: ownership is recorded immediately.
-  job.pid = pid; job.state = State::launching; job.execError = std::move(reader);
+  job.pid = pid; job.state = State::launching; job.execError = std::move(reader); job.killed = false;
   // The child also calls setpgid. ESRCH/EACCES mean it already exited/execed.
   (void)setpgid(pid, pid);
 }
