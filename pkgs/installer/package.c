@@ -170,7 +170,8 @@ static const char *const distribution_elements[] = {
     "background", "background-darkAqua", "welcome", "readme", "license",
     "conclusion", "product", "choices-outline", "line", "choice", "pkg-ref",
     "bundle-version", "bundle", "must-close", "app", "script",
-    "installation-check", "volume-check", NULL};
+    "installation-check", "volume-check", "allowed-os-versions", "os-version",
+    NULL};
 static const char *const expression_attributes[] = {
     "selected", "enabled", "visible", "active", NULL};
 static const char *const initial_attributes[] = {
@@ -218,9 +219,33 @@ static void validate_distribution(Package *pkg, InstallerJS *js, xmlNode *n,
     }
     if (xml_is(n, "installation-check") || xml_is(n, "volume-check")) {
       char *source = xml_attr(n, "script", NULL);
-      installer_js_compile(js, source, xml_name(n), 1);
+      installer_js_compile(js, source, xml_name(n), 0);
       free(source);
       pkg->needs_js = 1;
+    }
+    if (xml_is(n, "os-version")) {
+      /* Informational, like hostArchitectures: the root's OS is not the
+       * host's, and the package's own installation-check is what enforces. */
+      char *min = xml_attr(n, "min", ""), *before = xml_attr(n, "before", "");
+      for (xmlAttr *a = n->properties; a; a = a->next) {
+        const char *key = (const char *)a->name, *p;
+        if (strcmp(key, "min") && strcmp(key, "before"))
+          die("unsupported os-version attribute: %s", key);
+        for (p = *key == 'm' ? min : before; *p; p++)
+          if (!strchr("0123456789.", *p))
+            die("os-version %s is not a dotted version: %s", key,
+                *key == 'm' ? min : before);
+      }
+      if (!*min && !*before)
+        die("os-version without min or before");
+      size_t old = pkg->allowed_os_versions ? strlen(pkg->allowed_os_versions) : 0;
+      size_t len = old + strlen(min) + strlen(before) + 16;
+      pkg->allowed_os_versions = xrealloc(pkg->allowed_os_versions, len, 1);
+      snprintf(pkg->allowed_os_versions + old, len - old, "%s%s%s%s%s%s",
+               old ? ", " : "", *min ? ">= " : "", min,
+               *min && *before ? " and " : "", *before ? "< " : "", before);
+      free(min);
+      free(before);
     }
     if (xml_is(n, "options") && !pkg->host_architectures) {
       char *arch = xml_attr(n, "hostArchitectures", "");

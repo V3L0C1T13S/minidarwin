@@ -14,6 +14,8 @@
 #include <unistd.h>
 #include <zlib.h>
 
+const char *opt_system_version;
+int opt_skip_scripts;
 void (*die_hook)(void);
 void (*create_hook)(const char *path);
 

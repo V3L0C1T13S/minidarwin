@@ -17,6 +17,10 @@ static const char usage[] =
     "                          the running root, installed into in place\n"
     "  -script-runner PROGRAM  run install scripts through PROGRAM; needed for\n"
     "                          any root but \"/\", where scripts run directly\n"
+    "  -system-version X.Y     answer system.version.ProductVersion with X.Y\n"
+    "                          instead of reading the host's SystemVersion.plist\n"
+    "  -skip-scripts           install payloads and receipts; run no package\n"
+    "                          scripts (none of them is checked or required)\n"
     "  -pkginfo                describe the package and install nothing\n"
     "                          optional -target resolves JavaScript read-only\n"
     "\n"
@@ -39,6 +43,8 @@ static void inspect(const Package *pkg) {
   }
   if (pkg->host_architectures)
     printf("host architectures (not enforced): %s\n", pkg->host_architectures);
+  if (pkg->allowed_os_versions)
+    printf("allowed OS versions (not enforced): %s\n", pkg->allowed_os_versions);
 }
 
 static int is(const char *arg, const char *name) {
@@ -70,6 +76,18 @@ int main(int argc, char **argv) {
   for (int i = first; i < argc; i++) {
     if (is(argv[i], "-pkginfo") && !pkginfo) {
       pkginfo = 1;
+      continue;
+    }
+    if (is(argv[i], "-skip-scripts") && !opt_skip_scripts) {
+      opt_skip_scripts = 1;
+      continue;
+    }
+    if (is(argv[i], "-system-version") && !opt_system_version && i + 1 < argc) {
+      const char *v = argv[++i];
+      size_t n = strspn(v, "0123456789.");
+      if (!n || v[n] || v[0] == '.' || v[n - 1] == '.' || strstr(v, ".."))
+        die("-system-version must be a numeric dotted version: %s", v);
+      opt_system_version = v;
       continue;
     }
     const char **slot = is(argv[i], "-pkg")                ? &package

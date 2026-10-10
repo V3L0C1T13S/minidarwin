@@ -83,9 +83,14 @@ typedef struct {
   Component *components;
   size_t count;
   char *host_architectures; /* informational; NULL if absent */
+  char *allowed_os_versions; /* informational, e.g. "15 <= v < 16.0"; NULL if absent */
   struct _xmlDoc *distribution; /* retained until target selection */
   int needs_js, unresolved;
 } Package;
+
+/* Command-line policy (main.c sets these, defined in util.c). */
+extern const char *opt_system_version; /* -system-version: system.version.ProductVersion */
+extern int opt_skip_scripts;           /* -skip-scripts: install payloads only */
 
 /* util.c */
 _Noreturn void die(const char *fmt, ...);

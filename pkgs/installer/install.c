@@ -287,6 +287,13 @@ static void preflight(Package *pkg, const char *runner) {
   place_payload(pkg);
   for (size_t i = 0; i < pkg->count; i++) {
     Component *c = &pkg->components[i];
+    if (opt_skip_scripts)
+      for (int h = 0; h < HOOK_COUNT; h++)
+        if (c->hooks[h]) {
+          fprintf(stderr, "mdpkg: skipping %s %s (-skip-scripts)\n",
+                  c->identifier, hook_names[h]);
+          c->hooks[h] = NULL;
+        }
     for (int h = 0; h < HOOK_COUNT; h++)
       if (c->hooks[h] && !runner && !tx.live)
         die("%s has a %s script; an offline root needs an isolating "

@@ -220,5 +220,11 @@ in
     url = "https://darling-misc.s3.eu-central-1.amazonaws.com/mc-4.8.7-0.pkg";
     hash = "sha256-WwR/YCJH3iuc2fTtb0uV+5CDoYpkNUd9rL+sXza/oDA=";
   };
+  # MacPorts 2.12.6 for macOS 15: an Apple-built product archive (gzip CPIO
+  # payload, bash postinstall, Distribution JS) for the installer's tests.
+  macportsPkg = fetchurl {
+    url = "https://github.com/macports/macports-base/releases/download/v2.12.6/MacPorts-2.12.6-15-Sequoia.pkg";
+    hash = "sha256-LW1Y/z/2DnD43AXLLfnfMTfj18DG1vYjbWjIugM0PjQ=";
+  };
 
 }

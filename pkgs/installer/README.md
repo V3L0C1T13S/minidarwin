@@ -14,6 +14,9 @@ mdpkg -pkginfo -pkg FILE [-target DIRECTORY]
 mdpkg -vers
 ```
 
+Two further options exist for packages written for a macOS that is not the
+host: `-system-version X.Y` and `-skip-scripts` (see "MacPorts" below).
+
 `-root` is a synonym of `-target` (`-target` is the macOS name). The older
 `mdpkg install ...` and `mdpkg inspect ...` forms take the same options.
 
@@ -48,6 +51,47 @@ external Distribution scripts and package references, hardlinks, device nodes,
 FIFOs, set-id bits, AppleDouble files, DTDs in package XML, and unknown
 PackageInfo or Distribution elements. XML plist reads have the separate,
 restricted DOCTYPE handling described below.
+
+## MacPorts
+
+The MacPorts 2.12.6 package for macOS 15 (`sources.macportsPkg`, a product
+archive with a gzip CPIO payload of 1,693 entries, a `postinstall` and a
+Distribution `installation-check`) installs its payload with:
+
+```
+mdpkg -pkg MacPorts-2.12.6-15-Sequoia.pkg -target ROOT \
+      -system-version 15.6 -skip-scripts
+```
+
+Two things in that package are about macOS 15, not about the format, and mdpkg
+does not guess at either:
+
+- **`-system-version X.Y`.** The package's check refuses any
+  `system.version.ProductVersion` outside 15.x, and `system.version` is the
+  host's `SystemVersion.plist` (a MiniDarwin root has none, a macOS 26 host
+  says 26). The option answers `system.version.ProductVersion` with the given
+  value, and nothing else: `my.target.systemVersion` is still read from the
+  target, and `system.sysctl` from the host. The package's
+  `<allowed-os-versions>` is parsed and reported by `-pkginfo` but, like
+  `hostArchitectures`, not enforced: the check script is what enforces it.
+- **`-skip-scripts`.** The `postinstall` creates the `macports` user with
+  `/usr/bin/dscl` and `dseditgroup`, edits the installing user's shell profile
+  through `su`, and then runs the just-installed `tclsh8.6` and `port
+  selfupdate` (network). None of that exists on MiniDarwin, and in an offline
+  root the script's absolute `/opt/local` and `/usr/bin` paths name the host's.
+  With the sandbox runner it fails at `dscl` and the install rolls back, which
+  is the right outcome and the reason the option exists. `-skip-scripts`
+  installs payloads and receipts only; each skipped script is named on stderr.
+  The configuration files the script would copy from `*.conf.default`, the
+  `macports` user and the shell profile are left to the administrator.
+
+Checks (`installation-check`, `volume-check`) are evaluated as scripts, so a
+statement such as `script="InstallationCheck();"` works; a check written as a
+bare expression still does. `Warn` results, such as MacPorts' missing
+`/usr/bin/xcodebuild`, are printed and the install continues.
+
+The payload is only installed, not run: MacPorts' binaries need a working dyld
+and, for its Tcl, libraries MiniDarwin has not built.
 
 ## Installer JavaScript
 

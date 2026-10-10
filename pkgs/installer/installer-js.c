@@ -151,6 +151,15 @@ static JSValue native_api(JSContext *ctx, JSValueConst this_value, int argc,
   InstallerJS *js = JS_GetContextOpaque(ctx);
   if (interrupted(js->runtime, js))
     return JS_ThrowInternalError(ctx, "Installer JS evaluation time limit");
+  if (api == API_HOST_VERSION && opt_system_version) {
+    JSValue object = JS_NewObject(ctx);
+    if (JS_SetPropertyStr(ctx, object, "ProductVersion",
+                          JS_NewString(ctx, opt_system_version)) < 0) {
+      JS_FreeValue(ctx, object);
+      return JS_EXCEPTION;
+    }
+    return object;
+  }
   if (api == API_HOST_VERSION) {
     char *path = read_path(js, "/System/Library/CoreServices/SystemVersion.plist");
     JSValue result = js_plist_read(ctx, path);
@@ -427,7 +436,14 @@ void installer_js_check(InstallerJS *js, xmlNode *node) {
     put(js, js->result, keys[i], JS_NewString(js->context, ""));
   installer_js_my(js, JS_UNDEFINED);
   char *source = xml_attr(node, "script", NULL);
-  int allowed = installer_js_boolean(js, source, xml_name(node));
+  /* Evaluated as a script, not wrapped as an expression: Apple's checks are
+   * commonly statements (`script="InstallationCheck();"`), and a script's
+   * completion value is that of its last expression statement. */
+  JSValue verdict = installer_js_eval(js, source, xml_name(node), 0);
+  if (JS_IsObject(verdict))
+    die("Installer JS %s: expected synchronous Boolean expression", xml_name(node));
+  int allowed = JS_ToBool(js->context, verdict);
+  JS_FreeValue(js->context, verdict);
   free(source);
   JSValue type = JS_GetPropertyStr(js->context, js->result, "type");
   JSValue title = JS_GetPropertyStr(js->context, js->result, "title");

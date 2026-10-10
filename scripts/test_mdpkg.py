@@ -527,6 +527,49 @@ else:
         self.assertIn("warning: Notice: Continue", result.stderr)
         self.assertTrue((self.root / "usr/bin/tool").exists())
 
+    def test_js_check_may_be_a_statement(self):
+        # MacPorts' Distribution says script="InstallationCheck();".
+        self.js_package(script="function ok(){return true;} function no(){return false;}",
+                        check="ok();", volume="ok();")
+        self.install()
+        self.assertTrue((self.root / "usr/bin/tool").exists())
+        self.js_package(script="function no(){my.result.type='Fatal'; return false;}", check="no();")
+        self.install(ok=False)
+
+    def test_system_version_override(self):
+        self.js_package(script="function v(){return system.version.ProductVersion === '15.6';}", check="v();")
+        self.install(ok=False)
+        self.original_intact()
+        self.js_inspect(ok=False)
+        self.assertIn("payload entries", self.run_cli("-pkginfo", "-pkg", str(self.pkg), "-target",
+                                                       str(self.root), "-system-version", "15.6").stdout)
+        self.install(True, "-system-version", "15.6")
+        self.assertTrue((self.root / "usr/bin/tool").exists())
+        for bad in ["", "15.", ".15", "15..6", "15.x", "15 "]:
+            self.run_cli("-pkginfo", "-pkg", str(self.pkg), "-system-version", bad, ok=False)
+
+    def test_allowed_os_versions_are_reported_and_validated(self):
+        self.js_package(extra='<allowed-os-versions><os-version min="15" before="16.0"/>'
+                              '<os-version min="14.4"/></allowed-os-versions>')
+        out = self.run_cli("-pkginfo", "-pkg", str(self.pkg), "-target", str(self.root)).stdout
+        self.assertIn("allowed OS versions (not enforced): >= 15 and < 16.0, >= 14.4", out)
+        for bad in ['<allowed-os-versions><os-version min="15" only="1"/></allowed-os-versions>',
+                    '<allowed-os-versions><os-version min="x"/></allowed-os-versions>',
+                    '<allowed-os-versions><os-version/></allowed-os-versions>']:
+            with self.subTest(bad=bad):
+                self.js_package(extra=bad)
+                self.run_cli("-pkginfo", "-pkg", str(self.pkg), "-target", str(self.root), ok=False)
+
+    def test_skip_scripts_installs_payload_without_running_them(self):
+        marker = self.base / "ran"
+        self.package(script=("#!/bin/sh\ntouch %s\nexit 1\n" % marker).encode())
+        self.install(ok=False)
+        result = self.install(True, "-skip-scripts")
+        self.assertIn("skipping org.minidarwin.test postinstall", result.stderr)
+        self.assertFalse(marker.exists())
+        self.assertTrue((self.root / "usr/bin/tool").exists())
+        self.assertTrue((self.root / "private/var/db/receipts/org.minidarwin.test.plist").exists())
+
     def test_js_inspection_is_read_only_and_target_free_does_not_execute(self):
         self.js_package(script="throw new Error('top level executed');")
         result = self.run_cli("inspect", "-pkg", str(self.pkg))
