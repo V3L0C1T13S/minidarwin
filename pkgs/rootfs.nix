@@ -4,7 +4,8 @@
 # patch_cmds and misc_cmds tools, awk, file, curl, top, nano/pico, bash, Perl,
 # zsh, bzip2, zip/unzip and ncurses' own; the libraries they link (libedit, libncurses,
 # libutil, libsbuf, libmd, libz, libbz2, ICU, libxml2, libxo); QuickJS; LibreSSL as primary TLS
-# and a complete OpenSSL 0.9.8 install under /compat/OS X/10.7; terminfo; and the
+# and a complete OpenSSL 0.9.8 install under /compat/OS X/10.7 (on x86_64,
+# also GCC 4.2.1's libstdc++ under /compat/OS X/10.8); terminfo; and the
 # CA bundle curl reads, /etc/ssl/cert.pem. No dyld yet, so nothing runs.
 { lib
 , mkDarwinPackage
@@ -45,6 +46,7 @@
 , quickjs
 , libressl
 , openssl098
+, libstdcxx ? null
 , nano
 , bash
 , darwinPerl
@@ -63,12 +65,14 @@
 let
   cmds = [ shellCmds fileCmds textCmds advCmds basicCmds systemCmds patchCmds miscCmds awk file curl top nano bash darwinPerl zsh ncursesTools su sudo installer quickjs launchd open ];
   members = [ libSystem libsystemTree2 libcxxDylib libcxxabiDylib copyfile removefile ncurses ncursesPanel terminfo certPem libedit libutil libsbuf libmd zlib bzip2 zip icu libxml2 libxo libressl openssl098 ] ++ cmds
+    ++ lib.optional (libstdcxx != null) libstdcxx
     ++ lib.optional (runtimeDyld != null) runtimeDyld;
 
   # Union of passthru.allowUndefined from all members.
   declaredRaw =
     lib.foldl' (acc: p: acc // (p.allowUndefined or { })) { }
-      (lib.attrValues libsystemPass2 ++ [ libcxxDylib libcxxabiDylib copyfile removefile ncurses ncursesPanel libedit libutil libsbuf libmd icu libxml2 libxo libressl openssl098 bzip2 zip ] ++ cmds);
+      (lib.attrValues libsystemPass2 ++ [ libcxxDylib libcxxabiDylib copyfile removefile ncurses ncursesPanel libedit libutil libsbuf libmd icu libxml2 libxo libressl openssl098 bzip2 zip ] ++ cmds
+        ++ lib.optional (libstdcxx != null) libstdcxx);
   # A runtime tree supplies these providers, or these symbols of a provider
   # it supplies only in part. The whole-tree import check below still
   # rejects any of them that the tree does not define.
@@ -167,6 +171,15 @@ mkDarwinPackage {
     done
     [ -e "$out/compat/OS X/10.7/usr/lib/libcrypto.0.9.8.dylib" ] || {
       echo "rootfs: missing isolated OpenSSL 0.9.8" >&2; exit 1; }
+    ${lib.optionalString (libstdcxx != null) ''
+    for f in libstdc++.6.0.9.dylib libstdc++.6.dylib libstdc++.dylib; do
+      [ -e "$out/compat/OS X/10.8/usr/lib/$f" ] || {
+        echo "rootfs: missing isolated libstdc++ $f" >&2; exit 1; }
+    done
+    # Old binaries' libstdc++ stays out of /usr/lib: new code links libc++.
+    [ ! -e "$out/usr/lib/libstdc++.6.dylib" ] || {
+      echo "rootfs: libstdc++ escaped compatibility prefix" >&2; exit 1; }
+    ''}
     # Keep the exec bit: the release maps it to 0755 vs 0644 (man pages).
     find $out -type d -exec chmod 755 {} +
     find $out -type f -perm -u+x -exec chmod 755 {} +

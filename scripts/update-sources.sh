@@ -150,6 +150,8 @@ if [ "$changed" = 1 ]; then
     ssl.0.9.8 pkgs/openssl098/libssl-sources.nix
   gen_sources OpenSSL098 openssl.xcodeproj/project.pbxproj \
     openssl pkgs/openssl098/openssl-sources.nix
+  gen_sources libstdcxx libstdcxx.xcodeproj/project.pbxproj \
+    'libstdc++.dylib' pkgs/libstdcxx/libstdcxx-sources.nix
 
   # Stage 6: *_cmds projects, one attribute per tool target (pkgs/cmds/mk-cmds.nix).
   gen_cmds() { # <attr> <out> <target>...

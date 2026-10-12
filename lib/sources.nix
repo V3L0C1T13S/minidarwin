@@ -199,6 +199,11 @@ in
   # Last Apple release of the legacy 0.9.8 libraries; outside the macOS 26 train.
   OpenSSL098 = apple "OpenSSL098" "OpenSSL098-85"
     "sha256-2cq99/hbCuK9vV3MOQQ/XXrPgkoSWBtevhrobLHBEdA=";
+  # Apple's GCC 4.2.1 libstdc++, kept on x86_64 macOS for old binaries; the
+  # last release (2022), outside the macOS 26 train. Installed under
+  # /compat/OS X/10.8 (pkgs/libstdcxx/libstdcxx.nix).
+  libstdcxx = apple "libstdcxx" "libstdcxx-105.4"
+    "sha256-MWAxiCnQFa5gnJDvuRhcl2dt2USephp3Jo839c7bPz8=";
   # Last Apple nano release; this project is not part of the macOS 26 source set.
   nano = apple "nano" "nano-12"
     "sha256-mWvLo0OrjkDsAz9MRa3STnW1wWU/xKvg2UFEic2DDks=";

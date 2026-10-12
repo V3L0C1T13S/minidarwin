@@ -121,6 +121,7 @@
           qemuBoot = (scopeFor pkgs "x86_64").qemuBoot;
           rootMountProbeImage = (scopeFor pkgs "x86_64").rootMountProbeImage;
           perl = scope.darwinPerl;
+          libstdcxx = (scopeFor pkgs "x86_64").libstdcxx;
           default = scope.sdkHeaders;
         });
 

@@ -423,6 +423,13 @@ lib.makeScope pkgs.newScope (self: with self; {
     toolchain = toolchainStage3;
   };
 
+  # GCC 4.2.1's libstdc++ in the OS X 10.8 compatibility tree. macOS keeps
+  # it for x86_64 only, as old binaries' dependency; null elsewhere.
+  libstdcxx =
+    if targetArch == "x86_64"
+    then callPackage ./pkgs/libstdcxx/libstdcxx.nix { toolchain = toolchainStage3; }
+    else null;
+
   # Apple's nano editor, installed as /usr/bin/pico with a nano alias.
   nano = callPackage ./pkgs/nano/nano.nix {
     toolchain = toolchainStage3;
