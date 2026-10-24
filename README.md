@@ -1,3 +1,6 @@
+# Repository moved to Microlift organization
+This repository is only kept up for legacy users. Find the new Microlift repository here: https://github.com/microlift/minidarwin
+
 # minidarwin
 
 Pure, reproducible Nix bootstrap of a minimal Darwin userland from Apple's released sources, starting from bare Clang.
