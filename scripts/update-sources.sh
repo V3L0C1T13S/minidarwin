@@ -144,6 +144,8 @@ if [ "$changed" = 1 ]; then
     util pkgs/libutil/libutil-sources.nix
   gen_sources libmd libmd.xcodeproj/project.pbxproj \
     libmd pkgs/libmd/libmd-sources.nix
+  gen_sources libffi libffi.xcodeproj/project.pbxproj \
+    libffi pkgs/libffi/libffi-sources.nix
   gen_sources OpenSSL098 openssl.xcodeproj/project.pbxproj \
     crypto.0.9.8 pkgs/openssl098/libcrypto-sources.nix
   gen_sources OpenSSL098 openssl.xcodeproj/project.pbxproj \

@@ -81,6 +81,7 @@
             libxml2
             libxo
             quickjs
+            libffi
             sqlite
             libressl
             openssl098

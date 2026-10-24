@@ -414,6 +414,10 @@ lib.makeScope pkgs.newScope (self: with self; {
     toolchain = toolchainStage3;
   };
 
+  libffi = callPackage ./pkgs/libffi/libffi.nix {
+    toolchain = toolchainStage3;
+  };
+
   sqlite = callPackage ./pkgs/sqlite/sqlite.nix {
     toolchain = toolchainStage3;
   };

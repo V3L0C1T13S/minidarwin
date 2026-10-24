@@ -227,6 +227,10 @@ in
     "sha256-pxWn1tQQQbK1opytoVwBVQDIQ2SaLO9a0p/AzBvI/Tc=";
   zsh = apple "zsh" "zsh-118"
     "sha256-4AR+rbsO9pJzFxnzM6xenZp94TboXpFNJVCzppUmsFQ=";
+  # libffi.dylib and libffi-trampolines.dylib: the foreign function interface
+  # (closures included) that interpreters link.
+  libffi = apple "libffi" "libffi-40"
+    "sha256-xHefZVsZg9kUXV0t/HLdjPkkD/hn/4bvdRVJ4PsQLeM=";
   # libedit.3.dylib (sh's line editing) and the libncurses it links.
   libedit = apple "libedit" "libedit-65"
     "sha256-p1YROiK6YPLLe8klHhcikjVeVWuEW9plghsKJHXj+EM=";

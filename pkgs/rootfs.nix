@@ -3,7 +3,7 @@
 # the shell_cmds, file_cmds, text_cmds, adv_cmds, basic_cmds, system_cmds,
 # patch_cmds and misc_cmds tools, awk, file, curl, top, nano/pico, bash, Perl,
 # zsh, bzip2, zip/unzip and ncurses' own; the libraries they link (libedit, libncurses,
-# libutil, libsbuf, libmd, libz, libbz2, ICU, libxml2, libxo); QuickJS; LibreSSL as primary TLS
+# libutil, libsbuf, libmd, libz, libbz2, ICU, libxml2, libxo, libffi); QuickJS; LibreSSL as primary TLS
 # and a complete OpenSSL 0.9.8 install under /compat/OS X/10.7 (on x86_64,
 # also GCC 4.2.1's libstdc++ under /compat/OS X/10.8); terminfo; and the
 # CA bundle curl reads, /etc/ssl/cert.pem. No dyld yet, so nothing runs.
@@ -46,6 +46,8 @@
 , libxo
 , quickjs
 , sqlite
+, libffi
+, targetArch
 , libressl
 , openssl098
 , libstdcxx ? null
@@ -66,14 +68,14 @@
 
 let
   cmds = [ shellCmds fileCmds textCmds advCmds basicCmds systemCmds patchCmds miscCmds awk file curl top nano bash darwinPerl zsh ncursesTools su sudo installer quickjs sqlite launchd open ];
-  members = [ libSystem libsystemTree2 libcxxDylib libcxxabiDylib copyfile removefile ncurses ncursesPanel terminfo certPem libedit libutil libsbuf libmd zlib bzip2 libarchive zip icu libxml2 libxo libressl openssl098 ] ++ cmds
+  members = [ libSystem libsystemTree2 libcxxDylib libcxxabiDylib copyfile removefile ncurses ncursesPanel terminfo certPem libedit libutil libsbuf libmd libffi zlib bzip2 libarchive zip icu libxml2 libxo libressl openssl098 ] ++ cmds
     ++ lib.optional (libstdcxx != null) libstdcxx
     ++ lib.optional (runtimeDyld != null) runtimeDyld;
 
   # Union of passthru.allowUndefined from all members.
   declaredRaw =
     lib.foldl' (acc: p: acc // (p.allowUndefined or { })) { }
-      (lib.attrValues libsystemPass2 ++ [ libcxxDylib libcxxabiDylib copyfile removefile ncurses ncursesPanel libedit libutil libsbuf libmd icu libxml2 libxo libressl openssl098 bzip2 libarchive zip ] ++ cmds
+      (lib.attrValues libsystemPass2 ++ [ libcxxDylib libcxxabiDylib copyfile removefile ncurses ncursesPanel libedit libutil libsbuf libmd libffi icu libxml2 libxo libressl openssl098 bzip2 libarchive zip ] ++ cmds
         ++ lib.optional (libstdcxx != null) libstdcxx);
   # A runtime tree supplies these providers, or these symbols of a provider
   # it supplies only in part. The whole-tree import check below still
@@ -157,6 +159,10 @@ mkDarwinPackage {
     for f in /usr/lib/libsqlite3.dylib \
       /usr/include/sqlite3.h /usr/bin/sqlite3; do
       [ -e "$out$f" ] || { echo "rootfs: missing SQLite file $f" >&2; exit 1; }
+    done
+    for f in /usr/lib/libffi.dylib /usr/include/ffi/ffi.h /usr/include/ffi/ffitarget.h \
+      /usr/share/man/man3/ffi_call.3${lib.optionalString (targetArch == "aarch64") " /usr/lib/libffi-trampolines.dylib"}; do
+      [ -e "$out$f" ] || { echo "rootfs: missing libffi file $f" >&2; exit 1; }
     done
     for f in /usr/lib/libsbuf.dylib /usr/include/sbuf.h /usr/include/usbuf.h; do
       [ -e "$out$f" ] || { echo "rootfs: missing libsbuf file $f" >&2; exit 1; }
