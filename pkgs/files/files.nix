@@ -8,6 +8,9 @@
 #   - `hierarchy*`: the empty directory skeleton with owners and modes; the
 #     rootfs format has neither (directories are 0755), and members create the
 #     directories they need;
+#   - resolv.conf: Apple's symlink to ../var/run/resolv.conf, which configd
+#     writes at runtime. Nothing in the tree provides its target, and the
+#     release verifier rejects dangling symlinks;
 #   - passwd/group/master.passwd: macOS 26 does not install them from here.
 #     DarwinDirectory.py only writes plists for Apple's internal `ddtool`;
 #   - bsd.sb (built by the sandbox Makefile from an internal tool), the
@@ -38,7 +41,6 @@ stdenvNoCC.mkDerivation {
     for f in find.codes hosts.equiv rmtab xtab; do
       install -Dm644 /dev/null $etc/$f
     done
-    ln -s ../var/run/resolv.conf $etc/resolv.conf
 
     share=$out/usr/share
     install -Dm644 usr/share/firmlinks $share/firmlinks
