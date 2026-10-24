@@ -58,6 +58,7 @@
             top
             terminfo
             certPem
+            files
             libedit
             shellCmds
             libutil

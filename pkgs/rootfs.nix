@@ -22,6 +22,7 @@
 , top
 , terminfo
 , certPem
+, files
 , libedit
 , shellCmds
 , libutil
@@ -68,7 +69,7 @@
 
 let
   cmds = [ shellCmds fileCmds textCmds advCmds basicCmds systemCmds patchCmds miscCmds awk file curl top nano bash darwinPerl zsh ncursesTools su sudo installer quickjs sqlite launchd open ];
-  members = [ libSystem libsystemTree2 libcxxDylib libcxxabiDylib copyfile removefile ncurses ncursesPanel terminfo certPem libedit libutil libsbuf libmd libffi zlib bzip2 libarchive zip icu libxml2 libxo libressl openssl098 ] ++ cmds
+  members = [ libSystem libsystemTree2 libcxxDylib libcxxabiDylib copyfile removefile ncurses ncursesPanel terminfo certPem files libedit libutil libsbuf libmd libffi zlib bzip2 libarchive zip icu libxml2 libxo libressl openssl098 ] ++ cmds
     ++ lib.optional (libstdcxx != null) libstdcxx
     ++ lib.optional (runtimeDyld != null) runtimeDyld;
 
@@ -163,6 +164,10 @@ mkDarwinPackage {
     for f in /usr/lib/libffi.dylib /usr/include/ffi/ffi.h /usr/include/ffi/ffitarget.h \
       /usr/share/man/man3/ffi_call.3${lib.optionalString (targetArch == "aarch64") " /usr/lib/libffi-trampolines.dylib"}; do
       [ -e "$out$f" ] || { echo "rootfs: missing libffi file $f" >&2; exit 1; }
+    done
+    for f in /private/etc/hosts /private/etc/services /private/etc/shells \
+      /usr/share/dict/words /usr/share/misc/getopt /usr/share/man/man5/passwd.5; do
+      [ -e "$out$f" ] || [ -L "$out$f" ] || { echo "rootfs: missing files-project file $f" >&2; exit 1; }
     done
     for f in /usr/lib/libsbuf.dylib /usr/include/sbuf.h /usr/include/usbuf.h; do
       [ -e "$out$f" ] || { echo "rootfs: missing libsbuf file $f" >&2; exit 1; }

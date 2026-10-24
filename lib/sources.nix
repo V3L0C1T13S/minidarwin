@@ -165,6 +165,8 @@ in
     "sha256-QqBivftpeKxcEEwQEx+Fkh8H8JAC8E684H2YHWPzx5k=";
   file = apple "file" "file-106"
     "sha256-Je5ezH0g2bu/ccExJyKlOdt0LJn3DqUNnX3MybCm4iI=";
+  files = apple "files" "files-974.120.2"
+    "sha256-3jznGqH5dSOD1lcybSc0aBZMT1Q2Hd3x3pwtg7yRIYo=";
   curl = apple "curl" "curl-160"
     "sha256-fUFOM7WuF2TnmQcdq4H0oOxdg26XvyjzaZq94e511zs=";
   zlib = apple "zlib" "zlib-100"
