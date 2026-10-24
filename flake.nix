@@ -121,6 +121,7 @@
           bootRootfs = (scopeFor pkgs "x86_64").bootRootfs;
           bootRootPartition = (scopeFor pkgs "x86_64").bootRootPartition;
           qemuBoot = (scopeFor pkgs "x86_64").qemuBoot;
+          qemuImage = (scopeFor pkgs "x86_64").qemuImage;
           rootMountProbeImage = (scopeFor pkgs "x86_64").rootMountProbeImage;
           perl = scope.darwinPerl;
           libstdcxx = (scopeFor pkgs "x86_64").libstdcxx;

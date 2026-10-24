@@ -624,6 +624,20 @@ lib.makeScope pkgs.newScope (self: with self; {
     interactive = true;
     virtioBlock = true;
   };
+  # `nix build .#qemuImage`: the image `qemuBoot` boots, plus a helper that
+  # boots it the same way (`result/bin/minidarwin-qemu-boot [disk.img]`).
+  qemuImage = pkgs.runCommand "minidarwin-qemu-image" { } ''
+    mkdir -p $out/bin
+    ln -s ${shellBootImage}/disk.img $out/disk.img
+    cat > $out/bin/minidarwin-qemu-boot <<EOF
+    #!${pkgs.runtimeShell}
+    # Boots disk.img next to this script (or the one given) exactly as
+    # \`nix run .#qemuBoot\` does; Ctrl-A X quits QEMU.
+    here=\$(cd "\$(dirname "\$0")" && pwd)
+    exec ${qemuBoot}/bin/minidarwin-qemu-efi "\''${1:-\$here/../disk.img}"
+    EOF
+    chmod +x $out/bin/minidarwin-qemu-boot
+  '';
   platformBootImage = mkBootDisk {
     name = "minidarwin-platform-boot-disk";
     kernel = "${platformKernelCollection}/kernel";
