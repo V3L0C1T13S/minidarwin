@@ -414,6 +414,10 @@ lib.makeScope pkgs.newScope (self: with self; {
     toolchain = toolchainStage3;
   };
 
+  sqlite = callPackage ./pkgs/sqlite/sqlite.nix {
+    toolchain = toolchainStage3;
+  };
+
   quickjsBuildRoot = callPackage ./pkgs/quickjs/build-root.nix { };
   quickjs = callPackage ./pkgs/quickjs/quickjs.nix {
     toolchain = toolchainStage3;

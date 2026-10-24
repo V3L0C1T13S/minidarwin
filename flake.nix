@@ -81,6 +81,7 @@
             libxml2
             libxo
             quickjs
+            sqlite
             libressl
             openssl098
             nano

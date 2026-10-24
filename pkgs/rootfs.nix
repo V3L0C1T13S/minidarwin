@@ -45,6 +45,7 @@
 , libxml2
 , libxo
 , quickjs
+, sqlite
 , libressl
 , openssl098
 , libstdcxx ? null
@@ -64,7 +65,7 @@
 }:
 
 let
-  cmds = [ shellCmds fileCmds textCmds advCmds basicCmds systemCmds patchCmds miscCmds awk file curl top nano bash darwinPerl zsh ncursesTools su sudo installer quickjs launchd open ];
+  cmds = [ shellCmds fileCmds textCmds advCmds basicCmds systemCmds patchCmds miscCmds awk file curl top nano bash darwinPerl zsh ncursesTools su sudo installer quickjs sqlite launchd open ];
   members = [ libSystem libsystemTree2 libcxxDylib libcxxabiDylib copyfile removefile ncurses ncursesPanel terminfo certPem libedit libutil libsbuf libmd zlib bzip2 libarchive zip icu libxml2 libxo libressl openssl098 ] ++ cmds
     ++ lib.optional (libstdcxx != null) libstdcxx
     ++ lib.optional (runtimeDyld != null) runtimeDyld;
@@ -152,6 +153,10 @@ mkDarwinPackage {
     for f in /usr/bin/qjs /usr/bin/qjsc /usr/lib/quickjs/libquickjs.a \
       /usr/include/quickjs/quickjs.h /usr/include/quickjs/quickjs-libc.h; do
       [ -e "$out$f" ] || { echo "rootfs: missing QuickJS file $f" >&2; exit 1; }
+    done
+    for f in /usr/lib/libsqlite3.dylib \
+      /usr/include/sqlite3.h /usr/bin/sqlite3; do
+      [ -e "$out$f" ] || { echo "rootfs: missing SQLite file $f" >&2; exit 1; }
     done
     for f in /usr/lib/libsbuf.dylib /usr/include/sbuf.h /usr/include/usbuf.h; do
       [ -e "$out$f" ] || { echo "rootfs: missing libsbuf file $f" >&2; exit 1; }

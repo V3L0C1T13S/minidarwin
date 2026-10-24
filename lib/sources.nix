@@ -197,6 +197,12 @@ in
     url = "https://github.com/libarchive/libarchive/releases/download/v3.8.9/libarchive-3.8.9.tar.xz";
     hash = "sha256-iIyTT52VZI7LkWPcjiOrgKR27LgajxFUcEoie1tnbd4=";
   };
+  # Apple does not release its libsqlite3 source; this is upstream's latest
+  # release, as the amalgamation (sqlite3.c, sqlite3.h, shell.c).
+  sqlite = fetchurl {
+    url = "https://sqlite.org/2026/sqlite-autoconf-3540100.tar.gz";
+    hash = "sha256-km740+q5P79uBgEZASc+7AdrJVlKThza3VDJh/T21k4=";
+  };
   # Apple does not publish its LibreSSL source. Use the portable upstream release.
   libressl = fetchurl {
     url = "https://ftp.openbsd.org/pub/OpenBSD/LibreSSL/libressl-4.3.2.tar.gz";
