@@ -384,6 +384,11 @@ lib.makeScope pkgs.newScope (self: with self; {
     inherit copyfile;
   };
 
+  libarchive = callPackage ./pkgs/libarchive/libarchive.nix {
+    toolchain = toolchainStage3;
+    inherit zlib bzip2 copyfile;
+  };
+
   zip = callPackage ./pkgs/zip/zip.nix {
     toolchain = toolchainStage3;
   };

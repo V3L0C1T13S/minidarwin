@@ -191,6 +191,12 @@ in
     rev = "3d5e064e9dd67c70f7962836505a7fa067bf0a4e";
     hash = "sha256-+EH0TJZHC009ImtLd2NyUyuNlHxNZZz6hN16LXB+cX8=";
   };
+  # Upstream libarchive's release tarball (ships a generated configure); its
+  # bsdtar is /usr/bin/tar. Apple's own libarchive is a fork we do not pin.
+  libarchive = fetchurl {
+    url = "https://github.com/libarchive/libarchive/releases/download/v3.8.9/libarchive-3.8.9.tar.xz";
+    hash = "sha256-iIyTT52VZI7LkWPcjiOrgKR27LgajxFUcEoie1tnbd4=";
+  };
   # Apple does not publish its LibreSSL source. Use the portable upstream release.
   libressl = fetchurl {
     url = "https://ftp.openbsd.org/pub/OpenBSD/LibreSSL/libressl-4.3.2.tar.gz";

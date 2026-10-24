@@ -39,6 +39,7 @@
 , curl
 , zlib
 , bzip2
+, libarchive
 , zip
 , icu
 , libxml2
@@ -64,14 +65,14 @@
 
 let
   cmds = [ shellCmds fileCmds textCmds advCmds basicCmds systemCmds patchCmds miscCmds awk file curl top nano bash darwinPerl zsh ncursesTools su sudo installer quickjs launchd open ];
-  members = [ libSystem libsystemTree2 libcxxDylib libcxxabiDylib copyfile removefile ncurses ncursesPanel terminfo certPem libedit libutil libsbuf libmd zlib bzip2 zip icu libxml2 libxo libressl openssl098 ] ++ cmds
+  members = [ libSystem libsystemTree2 libcxxDylib libcxxabiDylib copyfile removefile ncurses ncursesPanel terminfo certPem libedit libutil libsbuf libmd zlib bzip2 libarchive zip icu libxml2 libxo libressl openssl098 ] ++ cmds
     ++ lib.optional (libstdcxx != null) libstdcxx
     ++ lib.optional (runtimeDyld != null) runtimeDyld;
 
   # Union of passthru.allowUndefined from all members.
   declaredRaw =
     lib.foldl' (acc: p: acc // (p.allowUndefined or { })) { }
-      (lib.attrValues libsystemPass2 ++ [ libcxxDylib libcxxabiDylib copyfile removefile ncurses ncursesPanel libedit libutil libsbuf libmd icu libxml2 libxo libressl openssl098 bzip2 zip ] ++ cmds
+      (lib.attrValues libsystemPass2 ++ [ libcxxDylib libcxxabiDylib copyfile removefile ncurses ncursesPanel libedit libutil libsbuf libmd icu libxml2 libxo libressl openssl098 bzip2 libarchive zip ] ++ cmds
         ++ lib.optional (libstdcxx != null) libstdcxx);
   # A runtime tree supplies these providers, or these symbols of a provider
   # it supplies only in part. The whole-tree import check below still

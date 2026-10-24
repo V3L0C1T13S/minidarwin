@@ -174,8 +174,6 @@ let
     pathchk = { };
     pax = {
       installDir = "/bin";
-      # options() selects tar's command-line syntax by the executable name.
-      links."/usr/bin/tar" = "/bin/pax";
       libraries = [{ pkg = copyfile; l = "copyfile"; }];
       allowUndefined = {
         # Archive members' owner and group names, both ways (cache.c).
@@ -253,12 +251,6 @@ mkCmds {
   ];
   inherit defines;
   ldflags = [ "-Wl,-dead_strip" ]; # DEAD_CODE_STRIPPING
-
-  # Not Apple's: pax's tar mode (/usr/bin/tar) lacks -k and --strip-components,
-  # which bsdtar has and `tar -jxmk --strip-components 1` needs.
-  postPatch = ''
-    patch -p1 < ${./pax-tar-compat.patch}
-  '';
 
   # The shar aggregate and gzip's install_scripts.sh.
   extraInstall = ''

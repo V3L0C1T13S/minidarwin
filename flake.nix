@@ -75,6 +75,7 @@
             curl
             zlib
             bzip2
+            libarchive
             zip
             icu
             libxml2
