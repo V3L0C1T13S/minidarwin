@@ -254,6 +254,12 @@ mkCmds {
   inherit defines;
   ldflags = [ "-Wl,-dead_strip" ]; # DEAD_CODE_STRIPPING
 
+  # Not Apple's: pax's tar mode (/usr/bin/tar) lacks -k and --strip-components,
+  # which bsdtar has and `tar -jxmk --strip-components 1` needs.
+  postPatch = ''
+    patch -p1 < ${./pax-tar-compat.patch}
+  '';
+
   # The shar aggregate and gzip's install_scripts.sh.
   extraInstall = ''
     install -Dm755 shar/shar.sh $out/usr/bin/shar

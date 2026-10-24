@@ -1,0 +1,145 @@
+diff -ruN a/pax/extern.h b/pax/extern.h
+--- a/pax/extern.h
++++ b/pax/extern.h
+@@ -247,6 +247,7 @@
+ extern int cwdfd;
+ extern int dflag;
+ extern int iflag;
++extern int strip_components;
+ extern int kflag;
+ extern int lflag;
+ extern int nflag;
+diff -ruN a/pax/options.c b/pax/options.c
+--- a/pax/options.c
++++ b/pax/options.c
+@@ -724,13 +724,45 @@
+ 	rmleadslash = 1;
+ 
+ 	/*
++	 * --strip-components N / --strip-components=N, as bsdtar has it.
++	 * getoldopt() knows no long options, so take it out of argv first.
++	 */
++	for (int i = 1; i < argc && strcmp(argv[i], "--") != 0; i++) {
++		char *num;
++		char *end;
++		long n;
++		int drop;
++
++		if (strncmp(argv[i], "--strip-components", 18) != 0)
++			continue;
++		if (argv[i][18] == '=') {
++			num = argv[i] + 19;
++			drop = 1;
++		} else if (argv[i][18] == '\0' && i + 1 < argc) {
++			num = argv[i + 1];
++			drop = 2;
++		} else
++			continue;
++		n = strtol(num, &end, 10);
++		if (*num == '\0' || *end != '\0' || n < 0 || n > 1024) {
++			paxwarn(1, "Invalid --strip-components value %s", num);
++			tar_usage();
++		}
++		strip_components = (int)n;
++		memmove(&argv[i], &argv[i + drop],
++		    (argc - i - drop + 1) * sizeof(*argv));
++		argc -= drop;
++		i--;
++	}
++
++	/*
+ 	 * process option flags
+ 	 */
+ 	while ((c = getoldopt(argc, argv,
+ #ifdef __APPLE__
+-	    "b:cef:hjmopqruts:vwxzBC:HI:LOPXZ014578")) != -1) {
++	    "b:cef:hjkmopqruts:vwxzBC:HI:LOPXZ014578")) != -1) {
+ #else
+-	    "b:cef:hjmopqruts:vwxyzBC:HI:LOPXZ014578")) != -1) {
++	    "b:cef:hjkmopqruts:vwxyzBC:HI:LOPXZ014578")) != -1) {
+ #endif /* __APPLE__ */
+ 		switch(c) {
+ 		case 'b':
+@@ -784,6 +816,12 @@
+ 			 * use bzip2.  Non standard option.
+ 			 */
+ 			gzip_program = BZIP2_CMD;
++			break;
++		case 'k':
++			/*
++			 * do not overwrite existing files
++			 */
++			kflag = 1;
+ 			break;
+ 		case 'm':
+ 			/*
+diff -ruN a/pax/pat_rep.c b/pax/pat_rep.c
+--- a/pax/pat_rep.c
++++ b/pax/pat_rep.c
+@@ -740,6 +740,36 @@
+ }
+ 
+ /*
++ * strip_name()
++ *	drop the first strip_components path components of name (tar
++ *	--strip-components). Return 1 if nothing is left, so the member is
++ *	skipped, as bsdtar does.
++ */
++
++static int
++strip_name(char *name, int *nlen)
++{
++	char *p = name;
++	int i;
++
++	for (i = 0; i < strip_components; i++) {
++		while (*p == '/')
++			p++;
++		if (*p == '\0')
++			return (1);
++		while (*p != '\0' && *p != '/')
++			p++;
++	}
++	while (*p == '/')
++		p++;
++	if (*p == '\0')
++		return (1);
++	(void)memmove(name, p, strlen(p) + 1);
++	*nlen = (int)strlen(name);
++	return (0);
++}
++
++/*
+  * mod_name()
+  *	modify a selected file name. first attempt to apply replacement string
+  *	expressions, then apply interactive file rename. We apply replacement
+@@ -788,6 +818,18 @@
+ 			rmleadslash = 2;
+ 			paxwarn(0, "Removing leading / from absolute path names in the archive");
+ 		}
++	}
++
++	/*
++	 * tar --strip-components: the name, and a hard link's target (which
++	 * names another member). A symlink's target is left alone.
++	 */
++	if (strip_components > 0 && (act == EXTRACT || act == LIST)) {
++		if (strip_name(arcn->name, &(arcn->nlen)))
++			return (1);
++		if ((arcn->type == PAX_HLK || arcn->type == PAX_HRG) &&
++		    strip_name(arcn->ln_name, &(arcn->ln_nlen)))
++			return (1);
+ 	}
+ 
+ 	/*
+diff -ruN a/pax/pax.c b/pax/pax.c
+--- a/pax/pax.c
++++ b/pax/pax.c
+@@ -63,6 +63,7 @@
+ int	cwdfd;			/* starting cwd */
+ int	dflag;			/* directory member match only  */
+ int	iflag;			/* interactive file/archive rename */
++int	strip_components;	/* tar --strip-components */
+ int	kflag;			/* do not overwrite existing files */
+ int	lflag;			/* use hard links when possible */
+ int	nflag;			/* select first archive member match */
